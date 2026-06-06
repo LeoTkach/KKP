@@ -75,3 +75,8 @@ Thumbs.db
 
 # Docker (локальные override-файлы)
 docker-compose.override.yml
+
+# Downloaded datasets / archives
+scripts/archive/
+scripts/*.zip
+*.zip

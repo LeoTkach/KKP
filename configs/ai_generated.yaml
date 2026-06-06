@@ -20,9 +20,7 @@ data:
   classes:
     - real
     - ai_generated
-  train_split: 0.8
   val_split: 0.1
-  test_split: 0.1
 
 model:
   name: resnet18
@@ -30,5 +28,7 @@ model:
   pretrained: true
 
 datasets:
-  # CIFAKE: https://www.kaggle.com/datasets/birdy654/cifake-real-and-ai-generated-images
   primary: cifake
+  layout:
+    train: train/{REAL,FAKE}
+    test: test/{REAL,FAKE}
