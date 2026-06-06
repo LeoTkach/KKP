@@ -1,0 +1,34 @@
+# Підзадача 1: real vs AI-generated
+
+project:
+  name: kkp-ai-generated
+  seed: 42
+
+paths:
+  data_dir: ${DATA_DIR:-./data}/ai_generated
+  output_dir: ${OUTPUT_DIR:-./outputs}/ai_generated
+
+training:
+  batch_size: 32
+  epochs: 10
+  learning_rate: 0.001
+  device: ${DEVICE:-cpu}
+  image_size: 224
+
+data:
+  task: ai_generated
+  classes:
+    - real
+    - ai_generated
+  train_split: 0.8
+  val_split: 0.1
+  test_split: 0.1
+
+model:
+  name: resnet18
+  num_classes: 2
+  pretrained: true
+
+datasets:
+  # CIFAKE: https://www.kaggle.com/datasets/birdy654/cifake-real-and-ai-generated-images
+  primary: cifake
