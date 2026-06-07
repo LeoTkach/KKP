@@ -1,4 +1,6 @@
-.PHONY: install lint test train docker-build docker-dev docker-test docker-lint docker-jupyter
+PYTHON ?= .venv/bin/python
+
+.PHONY: install lint test train demo download-hires download-hires-hf train-cifake docker-build docker-dev docker-test docker-lint docker-jupyter
 
 install:
 	pip install -e ".[dev]"
@@ -13,7 +15,25 @@ test:
 	pytest -v --cov=kkp --cov-report=term-missing
 
 train:
-	python -m kkp.train
+	$(PYTHON) -m kkp.train
+
+train-cifake:
+	$(PYTHON) -m kkp.train --config configs/ai_generated_cifake.yaml
+
+download-hires:
+	$(PYTHON) scripts/download_ai_hires.py
+
+download-hires-smoke:
+	$(PYTHON) scripts/download_ai_hires.py --train-per-class 4 --val-per-class 2 --test-per-class 2
+
+download-hires-hf:
+	$(PYTHON) scripts/download_ai_hires.py --profile hf
+
+download-hires-hf-smoke:
+	$(PYTHON) scripts/download_ai_hires.py --profile hf --train-per-class 4 --val-per-class 2 --test-per-class 2
+
+demo:
+	$(PYTHON) -m kkp.demo
 
 docker-build:
 	docker compose build

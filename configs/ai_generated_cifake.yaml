@@ -1,12 +1,12 @@
-# Підзадача 1: real vs AI-generated (hi-res, однакове роздільність)
+# Підзадача 1 (legacy): CIFAKE 32×32 — baseline для порівняння в звіті
 
 project:
-  name: kkp-ai-generated
+  name: kkp-ai-generated-cifake
   seed: 42
 
 paths:
-  data_dir: ${DATA_DIR:-./data}/ai_hires
-  output_dir: ${OUTPUT_DIR:-./outputs}/ai_generated
+  data_dir: ${DATA_DIR:-./data}/ai_generated
+  output_dir: ${OUTPUT_DIR:-./outputs}/ai_generated_cifake
 
 training:
   batch_size: 32
@@ -21,8 +21,8 @@ data:
     - real
     - ai_generated
   val_split: 0.1
-  strong_augment: true
-  min_side: 128
+  strong_augment: false
+  min_side: 0
   extra_train_dir: null
 
 model:
@@ -31,8 +31,7 @@ model:
   pretrained: true
 
 datasets:
-  primary: split_folder
+  primary: cifake
   layout:
     train: train/{REAL,FAKE}
-    val: val/{REAL,FAKE}
     test: test/{REAL,FAKE}
