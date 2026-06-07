@@ -27,10 +27,17 @@ dev = [
     "ipython>=8.26",
     "jupyterlab>=4.2",
 ]
+demo = [
+    "gradio>=5.0",
+]
+data = [
+    "datasets>=3.0",
+]
 
 [project.scripts]
 kkp-train = "kkp.train:main"
 kkp-evaluate = "kkp.evaluate:main"
+kkp-demo = "kkp.demo:main"
 
 [build-system]
 requires = ["hatchling"]
