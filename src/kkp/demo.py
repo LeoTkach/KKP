@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import socket
 from pathlib import Path
 
 import gradio as gr
@@ -77,9 +78,7 @@ def build_predict_fn(
 
         label, confidences = predict_image(model, image, transform, device, class_names)
         result = LABELS_UA.get(label, label)
-        display = {
-            LABELS_UA.get(name, name): round(score * 100, 1) for name, score in confidences.items()
-        }
+        display = {LABELS_UA.get(name, name): score for name, score in confidences.items()}
         return result, display
 
     return predict
@@ -96,12 +95,25 @@ def create_demo(predict_fn) -> gr.Blocks:
         with gr.Row():
             image_input = gr.Image(type="pil", label="Зображення")
             with gr.Column():
-                label_output = gr.Label(label="Ймовірності, %")
+                label_output = gr.Label(label="Ймовірності")
                 text_output = gr.Textbox(label="Результат", interactive=False)
 
         image_input.change(predict_fn, inputs=image_input, outputs=[text_output, label_output])
 
     return demo
+
+
+def _resolve_server_port(host: str, preferred: int, *, attempts: int = 10) -> int:
+    for offset in range(attempts):
+        port = preferred + offset
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+            try:
+                sock.bind((host, port))
+            except OSError:
+                continue
+            return port
+    msg = f"No free port in range {preferred}-{preferred + attempts - 1}"
+    raise OSError(msg)
 
 
 def main() -> None:
@@ -111,7 +123,10 @@ def main() -> None:
 
     predict_fn = build_predict_fn(args.config, args.checkpoint)
     demo = create_demo(predict_fn)
-    demo.launch(server_name=args.host, server_port=args.port, share=args.share)
+    port = _resolve_server_port(args.host, args.port)
+    if port != args.port:
+        logger.info("Port %d busy, using %d instead", args.port, port)
+    demo.launch(server_name=args.host, server_port=port, share=args.share)
 
 
 if __name__ == "__main__":
