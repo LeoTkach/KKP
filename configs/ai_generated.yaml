@@ -22,7 +22,7 @@ data:
     - ai_generated
   val_split: 0.1
   strong_augment: true
-  min_side: 256
+  min_side: 128
   extra_train_dir: null
 
 model:

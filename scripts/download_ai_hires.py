@@ -13,11 +13,16 @@ and demo without mixing 32 px CIFAKE tiles with full-size photos.
 Optional Kaggle (large scale, recommended for the report):
     pip install kaggle && place token at ~/.kaggle/kaggle.json
     python scripts/download_ai_hires.py --profile kaggle --dataset xhlulu/140k-real-and-fake-faces
+
+Optional Hugging Face (Parveshiiii/AI-vs-Real, streams without loading full archive):
+    pip install -e ".[data]" && export HF_TOKEN=...
+    python scripts/download_ai_hires.py --profile hf
 """
 
 from __future__ import annotations
 
 import argparse
+import os
 import shutil
 import subprocess
 import sys
@@ -34,6 +39,8 @@ IMAGE_SIZE = 512
 REAL_URL = "https://i.pravatar.cc/{size}?u=kkp-real-{index}"
 FAKE_URL = "https://thispersondoesnotexist.com/"
 USER_AGENT = "KKP-course-project/1.0 (educational dataset builder)"
+HF_DEFAULT_DATASET = "Parveshiiii/AI-vs-Real"
+HF_LABEL_TO_DIR = {0: "FAKE", 1: "REAL"}
 
 
 def parse_args() -> argparse.Namespace:
@@ -46,20 +53,20 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--profile",
-        choices=("faces", "kaggle"),
+        choices=("faces", "kaggle", "hf"),
         default="faces",
         help="Dataset source profile",
     )
     parser.add_argument(
         "--dataset",
-        default="xhlulu/140k-real-and-fake-faces",
-        help="Kaggle dataset slug (profile=kaggle)",
+        default=None,
+        help="Dataset slug (kaggle: xhlulu/140k-real-and-fake-faces; hf: Parveshiiii/AI-vs-Real)",
     )
     parser.add_argument("--train-per-class", type=int, default=800)
     parser.add_argument("--val-per-class", type=int, default=100)
     parser.add_argument("--test-per-class", type=int, default=100)
     parser.add_argument("--size", type=int, default=IMAGE_SIZE, help="Target square side")
-    parser.add_argument("--min-side", type=int, default=256, help="Minimum image side")
+    parser.add_argument("--min-side", type=int, default=128, help="Minimum image side")
     parser.add_argument("--sleep", type=float, default=0.15, help="Delay between requests")
     return parser.parse_args()
 
@@ -173,10 +180,11 @@ def _copy_split(
 
 
 def _download_kaggle_profile(args: argparse.Namespace) -> None:
+    dataset_slug = _resolve_dataset_slug(args)
     staging = args.output / "_kaggle_staging"
     if staging.exists():
         shutil.rmtree(staging)
-    _run_kaggle_download(args.dataset, staging)
+    _run_kaggle_download(dataset_slug, staging)
 
     real_dir, fake_dir = _find_class_dirs(staging)
     real_files = sorted(
@@ -223,6 +231,114 @@ def _download_kaggle_profile(args: argparse.Namespace) -> None:
     _print_summary(args.output, args.min_side)
 
 
+def _resolve_dataset_slug(args: argparse.Namespace) -> str:
+    if args.dataset is not None:
+        return args.dataset
+    if args.profile == "hf":
+        return HF_DEFAULT_DATASET
+    return "xhlulu/140k-real-and-fake-faces"
+
+
+def _load_hf_token() -> str:
+    try:
+        from dotenv import load_dotenv
+
+        load_dotenv()
+    except ImportError:
+        pass
+
+    token = os.environ.get("HF_TOKEN") or os.environ.get("HUGGING_FACE_HUB_TOKEN")
+    if not token:
+        msg = (
+            "HF_TOKEN not set. Export HF_TOKEN or HUGGING_FACE_HUB_TOKEN "
+            "(optionally via .env with python-dotenv)."
+        )
+        raise SystemExit(msg)
+    return token
+
+
+def _split_for_class_index(index: int, args: argparse.Namespace) -> str:
+    if index < args.train_per_class:
+        return "train"
+    if index < args.train_per_class + args.val_per_class:
+        return "val"
+    return "test"
+
+
+def _scan_hf_progress(output: Path) -> tuple[dict[str, int], dict[tuple[str, str], int]]:
+    class_totals = {label: 0 for label in HF_LABEL_TO_DIR.values()}
+    split_offsets: dict[tuple[str, str], int] = {}
+    for split in ("train", "val", "test"):
+        for label_dir in HF_LABEL_TO_DIR.values():
+            folder = output / split / label_dir
+            count = len(list(folder.glob("*.jpg"))) if folder.is_dir() else 0
+            split_offsets[(split, label_dir)] = count
+            class_totals[label_dir] += count
+    return class_totals, split_offsets
+
+
+def _download_hf_profile(args: argparse.Namespace) -> None:
+    try:
+        from datasets import load_dataset
+    except ImportError as exc:
+        msg = 'datasets package required. Install: pip install -e ".[data]"'
+        raise SystemExit(msg) from exc
+
+    dataset_slug = _resolve_dataset_slug(args)
+    token = _load_hf_token()
+    per_class = args.train_per_class + args.val_per_class + args.test_per_class
+    class_totals, split_offsets = _scan_hf_progress(args.output)
+
+    print(f"Target: {per_class} images per class (REAL + FAKE)")
+    print(f"Already on disk: REAL={class_totals['REAL']}, FAKE={class_totals['FAKE']}")
+    if class_totals["REAL"] >= per_class and class_totals["FAKE"] < per_class:
+        print("REAL is full — streaming will skip real photos and collect FAKE only (slower).")
+    print("Connecting to Hugging Face… first progress may take 2–10 minutes.")
+
+    stream = load_dataset(dataset_slug, split="train", streaming=True, token=token)
+    progress = tqdm(stream, desc=f"hf/{dataset_slug}")
+
+    for example in progress:
+        label_dir = HF_LABEL_TO_DIR.get(example["binary_label"])
+        if label_dir is None:
+            continue
+        if class_totals[label_dir] >= per_class:
+            if all(count >= per_class for count in class_totals.values()):
+                break
+            continue
+
+        image = example["image"]
+        if not isinstance(image, Image.Image):
+            image = Image.open(BytesIO(image["bytes"] if isinstance(image, dict) else image))
+        rgb = image.convert("RGB")
+        if min(rgb.size) < args.min_side:
+            continue
+
+        class_index = class_totals[label_dir]
+        split = _split_for_class_index(class_index, args)
+        offset = split_offsets.get((split, label_dir), 0)
+        filename = f"{split.lower()}_{label_dir.lower()}_{offset:04d}.jpg"
+        path = args.output / split / label_dir / filename
+        if not path.is_file():
+            _save_square(rgb, path, args.size)
+
+        split_offsets[(split, label_dir)] = offset + 1
+        class_totals[label_dir] += 1
+
+        if all(count >= per_class for count in class_totals.values()):
+            break
+
+    for label_dir, count in class_totals.items():
+        if count < per_class:
+            print(
+                f"Warning: only collected {count}/{per_class} {label_dir} images "
+                f"from {dataset_slug}",
+                file=sys.stderr,
+            )
+
+    _print_summary(args.output, args.min_side)
+
+
 def _print_summary(output: Path, min_side: int) -> None:
     print(f"\nDataset ready at {output.resolve()}")
     for split in ("train", "val", "test"):
@@ -238,8 +354,10 @@ def main() -> None:
     args = parse_args()
     if args.profile == "faces":
         _download_faces_profile(args)
-    else:
+    elif args.profile == "kaggle":
         _download_kaggle_profile(args)
+    else:
+        _download_hf_profile(args)
 
 
 if __name__ == "__main__":
