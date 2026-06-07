@@ -50,7 +50,7 @@ def train_model(
     criterion = nn.CrossEntropyLoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=training["learning_rate"])
 
-    best_val_acc = 0.0
+    best_val_acc = -1.0
     best_path = checkpoint_dir / "best.pth"
     history: list[dict[str, float | int]] = []
 
