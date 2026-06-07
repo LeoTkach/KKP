@@ -79,4 +79,7 @@ docker-compose.override.yml
 # Downloaded datasets / archives
 scripts/archive/
 scripts/*.zip
-*.zip
+
+# Checkpoints (не в git)
+outputs/**/*
+!outputs/.gitkeep

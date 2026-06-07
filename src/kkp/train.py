@@ -10,6 +10,7 @@ from dotenv import load_dotenv
 
 from kkp.config import load_config
 from kkp.data import build_cifake_dataloaders
+from kkp.training import train_model
 
 logger = logging.getLogger(__name__)
 
@@ -19,7 +20,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--config",
         type=Path,
-        default=Path("configs/default.yaml"),
+        default=Path("configs/ai_generated.yaml"),
         help="Path to YAML config",
     )
     return parser.parse_args()
@@ -37,11 +38,13 @@ def main() -> None:
     logger.info("Model: %s", config.get("model", {}).get("name"))
 
     if config.get("datasets", {}).get("primary") != "cifake":
-        return
+        msg = "Only CIFAKE dataset is supported for training right now"
+        raise ValueError(msg)
 
     training = config["training"]
     project = config["project"]
     data_dir = Path(config["paths"]["data_dir"])
+    output_dir = Path(config["paths"]["output_dir"])
 
     loaders = build_cifake_dataloaders(
         data_dir,
@@ -53,6 +56,8 @@ def main() -> None:
 
     for split, loader in loaders.items():
         logger.info("%s: %d samples, %d batches", split, len(loader.dataset), len(loader))
+
+    train_model(config, loaders, output_dir)
 
 
 if __name__ == "__main__":

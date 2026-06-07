@@ -96,4 +96,5 @@ def _make_loader(
         batch_size=batch_size,
         shuffle=shuffle,
         num_workers=num_workers,
+        drop_last=train,
     )

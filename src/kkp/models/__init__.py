@@ -1,1 +1,5 @@
-"""Модели и архитектуры."""
+"""Model architectures."""
+
+from kkp.models.factory import SUPPORTED_MODELS, create_model
+
+__all__ = ["SUPPORTED_MODELS", "create_model"]
