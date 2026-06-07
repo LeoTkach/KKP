@@ -11,7 +11,7 @@ import torch.nn as nn
 from dotenv import load_dotenv
 
 from kkp.config import load_config
-from kkp.data import build_cifake_dataloaders
+from kkp.data import build_folder_test_loader, build_loaders_from_config
 from kkp.training import load_checkpoint, run_epoch
 
 logger = logging.getLogger(__name__)
@@ -31,6 +31,12 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="Path to model checkpoint (.pth)",
     )
+    parser.add_argument(
+        "--data-dir",
+        type=Path,
+        default=None,
+        help="Evaluate on folder with real/ and ai_generated/ subdirs (real-world set)",
+    )
     return parser.parse_args()
 
 
@@ -41,7 +47,6 @@ def main() -> None:
 
     config = load_config(args.config)
     training = config["training"]
-    project = config["project"]
     output_dir = Path(config["paths"]["output_dir"])
     checkpoint_path = args.checkpoint or output_dir / "checkpoints" / "best.pth"
 
@@ -53,22 +58,29 @@ def main() -> None:
     model, checkpoint = load_checkpoint(checkpoint_path, device)
     logger.info("Loaded checkpoint from %s (epoch %d)", checkpoint_path, checkpoint["epoch"])
 
-    loaders = build_cifake_dataloaders(
-        Path(config["paths"]["data_dir"]),
-        batch_size=training["batch_size"],
-        image_size=training["image_size"],
-        seed=project["seed"],
-        val_fraction=config["data"]["val_split"],
-    )
-
     criterion = nn.CrossEntropyLoss()
-    test_metrics = run_epoch(
-        model,
-        loaders["test"],
-        criterion,
-        device,
-        desc="test",
-    )
+
+    if args.data_dir is not None:
+        loader = build_folder_test_loader(
+            args.data_dir,
+            batch_size=training["batch_size"],
+            image_size=training["image_size"],
+        )
+        logger.info(
+            "Evaluating real-world set: %s (%d samples)",
+            args.data_dir,
+            len(loader.dataset),
+        )
+        test_metrics = run_epoch(model, loader, criterion, device, desc="real-world")
+    else:
+        loaders = build_loaders_from_config(config)
+        test_metrics = run_epoch(
+            model,
+            loaders["test"],
+            criterion,
+            device,
+            desc="test",
+        )
 
     logger.info(
         "test loss %.4f | accuracy %.4f",

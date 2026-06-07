@@ -9,7 +9,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 from kkp.config import load_config
-from kkp.data import build_cifake_dataloaders
+from kkp.data import build_loaders_from_config
 from kkp.training import train_model
 
 logger = logging.getLogger(__name__)
@@ -35,24 +35,11 @@ def main() -> None:
     logger.info("Loaded config from %s", args.config)
     logger.info("Project: %s", config.get("project", {}).get("name"))
     logger.info("Task: %s", config.get("data", {}).get("task", "—"))
+    logger.info("Dataset: %s", config.get("datasets", {}).get("primary", "—"))
     logger.info("Model: %s", config.get("model", {}).get("name"))
 
-    if config.get("datasets", {}).get("primary") != "cifake":
-        msg = "Only CIFAKE dataset is supported for training right now"
-        raise ValueError(msg)
-
-    training = config["training"]
-    project = config["project"]
-    data_dir = Path(config["paths"]["data_dir"])
     output_dir = Path(config["paths"]["output_dir"])
-
-    loaders = build_cifake_dataloaders(
-        data_dir,
-        batch_size=training["batch_size"],
-        image_size=training["image_size"],
-        seed=project["seed"],
-        val_fraction=config["data"]["val_split"],
-    )
+    loaders = build_loaders_from_config(config)
 
     for split, loader in loaders.items():
         logger.info("%s: %d samples, %d batches", split, len(loader.dataset), len(loader))
