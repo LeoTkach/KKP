@@ -83,3 +83,18 @@ scripts/*.zip
 # Checkpoints (не в git)
 outputs/**/*
 !outputs/.gitkeep
+
+# Локальні фото для real-world eval (структура папок — в git)
+data/real_world/**/*
+!data/real_world/real/.gitkeep
+!data/real_world/ai_generated/.gitkeep
+
+# Supplement train images (deprecated — use scripts/download_ai_hires.py)
+data/supplement/**/*
+!data/supplement/train/REAL/.gitkeep
+!data/supplement/train/FAKE/.gitkeep
+
+# Hi-res AI vs real dataset (download via scripts/download_ai_hires.py)
+data/ai_hires/**/*
+!data/ai_hires/**/
+!data/ai_hires/**/.gitkeep

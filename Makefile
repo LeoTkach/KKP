@@ -1,4 +1,4 @@
-.PHONY: install lint test train docker-build docker-dev docker-test docker-lint docker-jupyter
+.PHONY: install lint test train demo download-hires train-cifake docker-build docker-dev docker-test docker-lint docker-jupyter
 
 install:
 	pip install -e ".[dev]"
@@ -14,6 +14,18 @@ test:
 
 train:
 	python -m kkp.train
+
+train-cifake:
+	python -m kkp.train --config configs/ai_generated_cifake.yaml
+
+download-hires:
+	python scripts/download_ai_hires.py
+
+download-hires-smoke:
+	python scripts/download_ai_hires.py --train-per-class 4 --val-per-class 2 --test-per-class 2
+
+demo:
+	python -m kkp.demo
 
 docker-build:
 	docker compose build
