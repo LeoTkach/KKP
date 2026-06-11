@@ -1,8 +1,9 @@
-"""Точка входа для оценки модели."""
+"""Evaluate model and export classification metrics."""
 
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 from pathlib import Path
 
@@ -12,7 +13,13 @@ from dotenv import load_dotenv
 
 from kkp.config import load_config
 from kkp.data import build_folder_test_loader, build_loaders_from_config
+from kkp.data.dataset import CLASS_NAMES
 from kkp.training import load_checkpoint, run_epoch
+from kkp.training.metrics import (
+    ClassificationMetrics,
+    collect_predictions,
+    compute_classification_metrics,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -37,7 +44,70 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="Evaluate on folder with real/ and ai_generated/ subdirs (real-world set)",
     )
+    parser.add_argument(
+        "--output",
+        type=Path,
+        default=None,
+        help="Path for metrics JSON (default: <output_dir>/metrics.json)",
+    )
     return parser.parse_args()
+
+
+def evaluate_model(
+    config: dict,
+    checkpoint_path: Path,
+    *,
+    data_dir: Path | None = None,
+) -> tuple[ClassificationMetrics, object]:
+    training = config["training"]
+    device = torch.device(training["device"])
+    model, checkpoint = load_checkpoint(checkpoint_path, device)
+    criterion = nn.CrossEntropyLoss()
+    model_name = config["model"]["name"]
+    class_names = tuple(config["data"]["classes"])
+
+    if data_dir is not None:
+        loader = build_folder_test_loader(
+            data_dir,
+            batch_size=training["batch_size"],
+            image_size=training["image_size"],
+        )
+        split = "real-world"
+        logger.info("Evaluating real-world set: %s (%d samples)", data_dir, len(loader.dataset))
+    else:
+        loader = build_loaders_from_config(config)["test"]
+        split = "test"
+        logger.info("Evaluating test set (%d samples)", len(loader.dataset))
+
+    loss_metrics = run_epoch(model, loader, criterion, device, desc=split)
+    y_true, y_pred, y_prob = collect_predictions(model, loader, device, desc=f"{split}-pred")
+    metrics = compute_classification_metrics(
+        y_true,
+        y_pred,
+        y_prob,
+        class_names=class_names or CLASS_NAMES,
+        model=model_name,
+        split=split,
+        checkpoint=str(checkpoint_path),
+        epoch=int(checkpoint["epoch"]),
+    )
+    logger.info(
+        "%s | loss %.4f | accuracy %.4f | precision %.4f | recall %.4f | f1 %.4f | roc_auc %.4f",
+        split,
+        loss_metrics.loss,
+        metrics.accuracy,
+        metrics.precision,
+        metrics.recall,
+        metrics.f1,
+        metrics.roc_auc,
+    )
+    return metrics, loss_metrics
+
+
+def save_metrics(metrics: ClassificationMetrics, path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(metrics.to_dict(), indent=2), encoding="utf-8")
+    logger.info("Metrics saved to %s", path)
 
 
 def main() -> None:
@@ -46,7 +116,6 @@ def main() -> None:
     args = parse_args()
 
     config = load_config(args.config)
-    training = config["training"]
     output_dir = Path(config["paths"]["output_dir"])
     checkpoint_path = args.checkpoint or output_dir / "checkpoints" / "best.pth"
 
@@ -54,39 +123,11 @@ def main() -> None:
         msg = f"Checkpoint not found: {checkpoint_path}"
         raise FileNotFoundError(msg)
 
-    device = torch.device(training["device"])
-    model, checkpoint = load_checkpoint(checkpoint_path, device)
-    logger.info("Loaded checkpoint from %s (epoch %d)", checkpoint_path, checkpoint["epoch"])
+    logger.info("Loaded checkpoint from %s", checkpoint_path)
+    metrics, _ = evaluate_model(config, checkpoint_path, data_dir=args.data_dir)
 
-    criterion = nn.CrossEntropyLoss()
-
-    if args.data_dir is not None:
-        loader = build_folder_test_loader(
-            args.data_dir,
-            batch_size=training["batch_size"],
-            image_size=training["image_size"],
-        )
-        logger.info(
-            "Evaluating real-world set: %s (%d samples)",
-            args.data_dir,
-            len(loader.dataset),
-        )
-        test_metrics = run_epoch(model, loader, criterion, device, desc="real-world")
-    else:
-        loaders = build_loaders_from_config(config)
-        test_metrics = run_epoch(
-            model,
-            loaders["test"],
-            criterion,
-            device,
-            desc="test",
-        )
-
-    logger.info(
-        "test loss %.4f | accuracy %.4f",
-        test_metrics.loss,
-        test_metrics.accuracy,
-    )
+    metrics_path = args.output or output_dir / "metrics.json"
+    save_metrics(metrics, metrics_path)
 
 
 if __name__ == "__main__":
