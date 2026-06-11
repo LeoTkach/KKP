@@ -37,6 +37,7 @@ data = [
 [project.scripts]
 kkp-train = "kkp.train:main"
 kkp-evaluate = "kkp.evaluate:main"
+kkp-compare = "kkp.compare:main"
 kkp-demo = "kkp.demo:main"
 
 [build-system]

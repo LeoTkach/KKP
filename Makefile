@@ -17,6 +17,22 @@ test:
 train:
 	$(PYTHON) -m kkp.train
 
+train-efficientnet:
+	$(PYTHON) -m kkp.train --config configs/ai_generated_efficientnet.yaml
+
+evaluate:
+	$(PYTHON) -m kkp.evaluate --config configs/ai_generated.yaml
+
+evaluate-efficientnet:
+	$(PYTHON) -m kkp.evaluate --config configs/ai_generated_efficientnet.yaml
+
+evaluate-all:
+	$(PYTHON) -m kkp.evaluate --config configs/ai_generated.yaml
+	$(PYTHON) -m kkp.evaluate --config configs/ai_generated_efficientnet.yaml
+
+compare:
+	$(PYTHON) -m kkp.compare
+
 train-cifake:
 	$(PYTHON) -m kkp.train --config configs/ai_generated_cifake.yaml
 
