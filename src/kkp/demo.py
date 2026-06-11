@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import random
 import socket
@@ -12,8 +13,10 @@ from typing import Any
 
 import gradio as gr
 import torch
+import torch.nn as nn
 from dotenv import load_dotenv
 from PIL import Image
+from torchvision.transforms import Compose
 
 from kkp.config import load_config
 from kkp.data.transforms import get_transforms
@@ -21,6 +24,21 @@ from kkp.inference import predict_image
 from kkp.training import load_checkpoint
 
 logger = logging.getLogger(__name__)
+
+DEFAULT_MODEL_CONFIGS: dict[str, Path] = {
+    "resnet18": Path("configs/ai_generated.yaml"),
+    "efficientnet_b0": Path("configs/ai_generated_efficientnet.yaml"),
+}
+
+MODEL_LABELS_UA: dict[str, str] = {
+    "resnet18": "ResNet18",
+    "efficientnet_b0": "EfficientNet-B0",
+}
+
+MODEL_DESCRIPTIONS: dict[str, str] = {
+    "resnet18": "Класична residual CNN — швидша, baseline для порівняння.",
+    "efficientnet_b0": "Compound scaling — менше параметрів, часто точніша на тому ж датасеті.",
+}
 
 LABELS_UA = {
     "real": "Реальне фото",
@@ -42,6 +60,7 @@ RADIUS_SM = "4px"
 RADIUS_PILL = "999px"
 
 CUSTOM_CSS = f"""
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500&display=swap');
 :root {{
     --kkp-radius: {RADIUS};
     --kkp-radius-sm: {RADIUS_SM};
@@ -107,6 +126,99 @@ CUSTOM_CSS = f"""
     gap: var(--kkp-gap) !important;
     flex: 1 1 0 !important;
     min-width: 0 !important;
+    width: 100% !important;
+    align-self: stretch !important;
+}}
+#kkp-page,
+#kkp-page.column {{
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    flex: 1 1 100% !important;
+    align-self: stretch !important;
+}}
+#kkp-page > .gap {{
+    align-items: stretch !important;
+    width: 100% !important;
+}}
+#kkp-page > .gap > *,
+#kkp-compare-section,
+#kkp-compare-section.column {{
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    align-self: stretch !important;
+    flex: 1 1 100% !important;
+}}
+.gradio-container .prose,
+#kkp-model-compare .prose,
+#kkp-model-compare .html-content,
+#kkp-model-info .prose,
+#kkp-results-output .prose {{
+    max-width: none !important;
+    width: 100% !important;
+}}
+.gradio-container .main .column:not(.compact) {{
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+}}
+#kkp-results-output,
+#kkp-model-compare,
+#kkp-compare-section,
+#kkp-compare-section .block,
+#kkp-compare-section .html-container,
+#kkp-compare-section .wrap,
+#kkp-model-section,
+#kkp-model-info {{
+    width: 100% !important;
+    max-width: 100% !important;
+    align-self: stretch !important;
+    flex: 1 1 100% !important;
+    min-width: 0 !important;
+}}
+#kkp-results-output .block,
+#kkp-results-output .html-container,
+#kkp-results-output .wrap,
+#kkp-model-compare .block,
+#kkp-model-compare .html-container,
+#kkp-model-compare .wrap,
+#kkp-model-compare.container {{
+    width: 100% !important;
+    max-width: 100% !important;
+    box-sizing: border-box !important;
+    padding: 0 !important;
+    border: none !important;
+    background: transparent !important;
+    box-shadow: none !important;
+}}
+#kkp-model-info .block,
+#kkp-model-info .html-container,
+#kkp-model-info .wrap {{
+    width: 100% !important;
+    max-width: 100% !important;
+    box-sizing: border-box !important;
+}}
+#kkp-model-compare .html-container {{
+    display: block !important;
+}}
+#kkp-model-section {{
+    width: 100% !important;
+    max-width: 100% !important;
+}}
+.results-stack {{
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: var(--kkp-gap);
+}}
+.results-stack .results-card,
+.results-stack .source-box {{
+    width: 100%;
+    box-sizing: border-box;
+}}
+.results-stack .source-box {{
+    margin-top: 0;
 }}
 #kkp-image-input,
 #kkp-image-input .wrap {{
@@ -226,6 +338,9 @@ CUSTOM_CSS = f"""
     display: none;
 }}
 .source-box {{
+    display: block;
+    width: 100%;
+    box-sizing: border-box;
     margin-top: var(--kkp-gap);
     padding: 0.55rem 0.75rem;
     border-radius: var(--kkp-radius-sm);
@@ -266,12 +381,14 @@ CUSTOM_CSS = f"""
 #kkp-actions button {{
     min-height: 2.125rem !important;
 }}
-.model-footer {{
-    margin-top: 0.5rem;
-    padding: 0.85rem 0 0;
-    border-top: 1px solid var(--kkp-border);
+.model-info {{
+    margin-top: 0.55rem;
+    padding: 0.75rem 1.15rem;
+    border: 1px solid var(--kkp-border);
+    border-radius: var(--kkp-radius-sm);
+    background: rgba(0, 0, 0, 0.18);
 }}
-.model-footer-row {{
+.model-info-row {{
     display: flex;
     flex-wrap: wrap;
     align-items: baseline;
@@ -280,20 +397,272 @@ CUSTOM_CSS = f"""
     color: #a1a1aa;
     line-height: 1.5;
 }}
-.model-footer-row b {{
+.model-info-arch {{
     color: #e4e4e7;
     font-weight: 500;
+    font-family: var(--kkp-font-mono);
+    font-size: var(--kkp-text-xs);
+    letter-spacing: 0.02em;
 }}
-.model-footer-sep {{
+.model-info-sep {{
     color: #3f3f46;
     user-select: none;
 }}
-.model-footer-path {{
-    margin-top: 0.35rem;
+.model-info-path {{
+    margin-top: 0.45rem;
     font-size: var(--kkp-text-xs);
     color: #52525b;
     font-family: var(--kkp-font-mono);
     word-break: break-all;
+    line-height: 1.4;
+}}
+#kkp-model-section {{
+    gap: 0 !important;
+    margin-bottom: 0.85rem !important;
+    width: 100% !important;
+}}
+#kkp-compare-section {{
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) !important;
+    gap: 0 !important;
+    margin-top: 0.85rem !important;
+    padding: 0 !important;
+    width: 100% !important;
+}}
+#kkp-compare-section > *,
+#kkp-compare-section .block,
+#kkp-compare-section .html-container,
+#kkp-compare-section .wrap {{
+    grid-column: 1 / -1 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    align-self: stretch !important;
+}}
+#kkp-model-compare,
+#kkp-model-compare.block {{
+    display: block !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    align-self: stretch !important;
+}}
+.bench-shell {{
+    display: block;
+    width: 100%;
+    min-width: 100%;
+    box-sizing: border-box;
+}}
+#kkp-model-picker {{
+    align-items: stretch !important;
+    gap: 0 !important;
+    margin: 0 !important;
+    border: 1px solid var(--kkp-border);
+    border-radius: var(--kkp-radius);
+    overflow: hidden;
+    background: var(--kkp-surface);
+}}
+#kkp-model-info .block,
+#kkp-model-info .html-container,
+#kkp-model-info .wrap {{
+    padding: 0 !important;
+    margin: 0 !important;
+}}
+#kkp-model-info .model-info {{
+    margin-top: 0.55rem;
+}}
+#kkp-model-picker-label,
+#kkp-model-picker-label .block,
+#kkp-model-picker-label .html-container,
+#kkp-model-picker-label .wrap {{
+    height: 100% !important;
+    padding: 0 !important;
+    margin: 0 !important;
+}}
+#kkp-model-picker-label {{
+    flex: 0 0 clamp(9.5rem, 22vw, 11.5rem) !important;
+    border-right: 1px solid var(--kkp-border);
+    background: rgba(255, 255, 255, 0.018);
+}}
+.model-picker-side {{
+    height: 100%;
+    padding: 0.95rem 1.15rem;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 0.25rem;
+}}
+.model-picker-eyebrow {{
+    margin: 0;
+    font-size: var(--kkp-text-xs);
+    font-weight: 500;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: #71717a;
+}}
+.model-picker-lead {{
+    margin: 0;
+    font-size: var(--kkp-text-sm);
+    line-height: 1.4;
+    color: #d4d4d8;
+}}
+#kkp-model-picker-controls {{
+    flex: 1 1 auto !important;
+    min-width: 0 !important;
+    padding: 0.85rem 1.15rem !important;
+    gap: 0.55rem !important;
+    justify-content: center !important;
+}}
+#kkp-model-select .wrap,
+#kkp-model-select fieldset {{
+    display: flex !important;
+    flex-direction: row !important;
+    gap: 0.4rem !important;
+    width: 100% !important;
+    border: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    min-width: 0 !important;
+}}
+#kkp-model-select label {{
+    flex: 1 1 0 !important;
+    min-width: 0 !important;
+    margin: 0 !important;
+    padding: 0.55rem 0.65rem !important;
+    border: 1px solid var(--kkp-border) !important;
+    border-radius: var(--kkp-radius-sm) !important;
+    background: transparent !important;
+    color: #8b8b93 !important;
+    font-size: var(--kkp-text-sm) !important;
+    font-weight: 500 !important;
+    text-align: center !important;
+    cursor: pointer !important;
+    transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease !important;
+}}
+#kkp-model-select label:hover {{
+    border-color: var(--kkp-border-strong) !important;
+    color: #c4c4cc !important;
+}}
+#kkp-model-select label:has(input:checked) {{
+    border-color: rgba(255, 255, 255, 0.22) !important;
+    background: rgba(255, 255, 255, 0.06) !important;
+    color: #f4f4f5 !important;
+}}
+#kkp-model-select input {{
+    position: absolute !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
+}}
+#kkp-model-note .block,
+#kkp-model-note .html-container,
+#kkp-model-note .wrap {{
+    padding: 0 !important;
+    margin: 0 !important;
+    min-height: 0 !important;
+}}
+.model-picker-note {{
+    margin: 0;
+    padding-left: 0.15rem;
+    font-size: var(--kkp-text-xs);
+    line-height: 1.45;
+    color: #71717a;
+}}
+.bench-panel {{
+    display: block;
+    width: 100%;
+    box-sizing: border-box;
+    margin-top: 0.85rem;
+    padding: 1.15rem 1.25rem 1.2rem;
+    border: 1px solid var(--kkp-border);
+    border-radius: var(--kkp-radius);
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.02) 0%, transparent 100%);
+}}
+.bench-head {{
+    margin-bottom: 1rem;
+    padding-bottom: 0.85rem;
+    border-bottom: 1px solid var(--kkp-border);
+}}
+.bench-eyebrow {{
+    display: block;
+    margin-bottom: 0.3rem;
+    font-size: var(--kkp-text-xs);
+    font-weight: 500;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: #71717a;
+}}
+.bench-title {{
+    margin: 0;
+    font-size: var(--kkp-text-lg);
+    font-weight: 500;
+    letter-spacing: -0.02em;
+    color: #f4f4f5;
+}}
+.bench-compare {{
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    width: 100%;
+}}
+.bench-compare-head,
+.bench-compare-row {{
+    display: grid;
+    grid-template-columns: minmax(5.5rem, 7rem) 1fr 1fr;
+    gap: 0.65rem;
+    align-items: baseline;
+    padding: 0.55rem 0;
+    border-bottom: 1px solid var(--kkp-border);
+    width: 100%;
+    box-sizing: border-box;
+}}
+.bench-compare-head {{
+    padding-top: 0;
+    padding-bottom: 0.65rem;
+}}
+.bench-compare-row:last-child {{
+    border-bottom: none;
+    padding-bottom: 0;
+}}
+.bench-compare-head span {{
+    font-size: var(--kkp-text-xs);
+    font-weight: 500;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: #71717a;
+}}
+.bench-compare-head span:first-child {{
+    visibility: hidden;
+}}
+.bench-metric {{
+    font-size: var(--kkp-text-sm);
+    color: #a1a1aa;
+}}
+.bench-val {{
+    font-family: var(--kkp-font-mono);
+    font-size: var(--kkp-text-base);
+    font-weight: 500;
+    color: #9ca3af;
+    text-align: left;
+}}
+.bench-val--lead {{
+    color: #f4f4f5;
+}}
+.bench-verdict {{
+    margin: 0.95rem 0 0;
+    padding-top: 0.85rem;
+    border-top: 1px solid var(--kkp-border);
+    font-size: var(--kkp-text-sm);
+    line-height: 1.5;
+    color: #a1a1aa;
+}}
+.bench-verdict strong {{
+    color: #e4e4e7;
+    font-weight: 500;
+}}
+.bench-verdict em {{
+    font-style: normal;
+    font-family: var(--kkp-font-mono);
+    color: #d4d4d8;
 }}
 .gradio-container .loader,
 .gradio-container .loading,
@@ -355,36 +724,126 @@ def _dark_theme() -> gr.Theme:
 
 @dataclass(frozen=True)
 class ModelProfile:
-    """Metadata shown in the demo footer; swap when adding model selection."""
+    """Metadata shown under the model picker."""
 
+    key: str
     profile_id: str
     display_name: str
     architecture: str
     epoch: int
     input_size: int
     dataset: str
-    test_accuracy: str
+    test_accuracy: float | None
+    f1: float | None
+    roc_auc: float | None
     train_samples: str
     checkpoint: str
+    description: str
 
-    def footer_html(self) -> str:
+    def profile_info_html(self) -> str:
+        acc = f"{self.test_accuracy * 100:.1f}%" if self.test_accuracy is not None else "—"
         parts = (
-            f"<b>{self.architecture}</b>",
-            f"ep. {self.epoch}",
-            f"{self.input_size}px",
-            f"acc {self.test_accuracy}",
-            self.dataset,
-            f"{self.train_samples} train",
+            f'<span class="model-info-arch">{self.architecture}</span>',
+            f"<span>ep. {self.epoch}</span>",
+            f"<span>{self.input_size}px</span>",
+            f"<span>test acc {acc}</span>",
+            f"<span>{self.dataset}</span>",
+            f"<span>{self.train_samples} train</span>",
         )
-        row = '<span class="model-footer-sep">·</span>'.join(
-            f"<span>{part}</span>" for part in parts
-        )
+        row = '<span class="model-info-sep">·</span>'.join(parts)
         return f"""
-        <div class="model-footer" id="model-footer-{self.profile_id}">
-            <div class="model-footer-row">{row}</div>
-            <div class="model-footer-path">{self.checkpoint}</div>
+        <div class="model-info" id="model-info-{self.profile_id}">
+            <div class="model-info-row">{row}</div>
+            <div class="model-info-path">{self.checkpoint}</div>
         </div>
         """
+
+
+@dataclass
+class LoadedModel:
+    key: str
+    model: nn.Module
+    transform: Compose
+    device: torch.device
+    class_names: tuple[str, ...]
+    profile: ModelProfile
+
+
+class DemoEngine:
+    def __init__(
+        self,
+        models: dict[str, LoadedModel],
+        dataset_samples: list[tuple[Path, str, str]],
+    ):
+        self.models = models
+        self.dataset_samples = dataset_samples
+        self.default_key = max(
+            models,
+            key=lambda key: (
+                models[key].profile.test_accuracy or 0.0,
+                models[key].profile.f1 or 0.0,
+            ),
+        )
+
+    @property
+    def choices(self) -> list[tuple[str, str]]:
+        return [(MODEL_LABELS_UA[key], key) for key in self.models]
+
+    def _run_prediction(
+        self,
+        model_key: str,
+        image: Image.Image,
+        source: dict[str, str] | None = None,
+    ) -> tuple[str, str]:
+        loaded = self.models[model_key]
+        label, confidences = predict_image(
+            loaded.model,
+            image,
+            loaded.transform,
+            loaded.device,
+            loaded.class_names,
+        )
+        winner_score = confidences[label] * 100
+        title = VERDICT_REAL if label == "real" else VERDICT_AI
+        results = _results_html(title, winner_score, confidences)
+        if source is None:
+            return results, EMPTY_SOURCE
+        source_html = _source_html(source, predicted=label)
+        return _combine_results(results, source_html), EMPTY_SOURCE
+
+    def predict(self, image: Image.Image | None, model_key: str) -> tuple[str, str]:
+        model_info = self.models[model_key].profile.profile_info_html()
+        if image is None:
+            return model_info, EMPTY_RESULTS
+        results, _source = self._run_prediction(model_key, image)
+        return model_info, results
+
+    def random_from_dataset(self, model_key: str) -> tuple[Image.Image | None, str, str]:
+        model_info = self.models[model_key].profile.profile_info_html()
+        if not self.dataset_samples:
+            msg = _empty_results_html("Датасет не знайдено. Запустіть `make download-hires-hf`.")
+            return None, model_info, msg
+
+        path, split, label_dir = random.choice(self.dataset_samples)
+        image = Image.open(path).convert("RGB")
+        source = {
+            "split": split,
+            "label_dir": label_dir,
+            "expected_class": _label_dir_to_class(label_dir),
+            "relative_path": f"{split}/{label_dir}/{path.name}",
+        }
+        results, _source = self._run_prediction(model_key, image, source=source)
+        return image, model_info, results
+
+    def comparison_html(self) -> str:
+        return _comparison_panel_html([loaded.profile for loaded in self.models.values()])
+
+
+def _load_metrics_json(output_dir: Path) -> dict[str, Any] | None:
+    path = output_dir / "metrics.json"
+    if not path.is_file():
+        return None
+    return json.loads(path.read_text(encoding="utf-8"))
 
 
 def _count_train_samples(data_dir: Path) -> str:
@@ -397,27 +856,131 @@ def _count_train_samples(data_dir: Path) -> str:
 
 
 def build_model_profile(
+    key: str,
     config: dict[str, Any],
     checkpoint: dict[str, Any],
     checkpoint_path: Path,
     *,
-    test_accuracy: str = "93.6%",
+    metrics: dict[str, Any] | None = None,
     dataset_name: str = "Parveshiiii/AI-vs-Real",
 ) -> ModelProfile:
     data_dir = Path(config["paths"]["data_dir"])
     project = config.get("project", {}).get("name", "kkp")
     model_name = config["model"]["name"]
     return ModelProfile(
+        key=key,
         profile_id=f"{project}-{model_name}",
         display_name=f"{project} / {model_name}",
         architecture=model_name.upper(),
         epoch=int(checkpoint["epoch"]),
         input_size=int(config["training"]["image_size"]),
         dataset=dataset_name,
-        test_accuracy=test_accuracy,
+        test_accuracy=float(metrics["accuracy"]) if metrics else None,
+        f1=float(metrics["f1"]) if metrics else None,
+        roc_auc=float(metrics["roc_auc"]) if metrics else None,
         train_samples=_count_train_samples(data_dir),
         checkpoint=str(checkpoint_path),
+        description=MODEL_DESCRIPTIONS.get(key, ""),
     )
+
+
+def _pct(value: float | None) -> str:
+    return f"{value * 100:.1f}%" if value is not None else "—"
+
+
+def _model_note_html(model_key: str) -> str:
+    description = MODEL_DESCRIPTIONS.get(model_key, "")
+    return f'<p class="model-picker-note">{description}</p>'
+
+
+def _compare_value_html(value: float | None, *, lead: bool) -> str:
+    lead_class = " bench-val--lead" if lead else ""
+    return f'<span class="bench-val{lead_class}">{_pct(value)}</span>'
+
+
+def _comparison_panel_html(profiles: list[ModelProfile]) -> str:
+    if len(profiles) < 2:
+        profile = profiles[0]
+        profile_name = MODEL_LABELS_UA.get(profile.key, profile.architecture)
+        return f"""
+        <div class="bench-panel">
+            <header class="bench-head">
+                <span class="bench-eyebrow">Архітектура</span>
+                <h2 class="bench-title">{profile_name}</h2>
+            </header>
+            <p class="bench-verdict">{profile.description}</p>
+        </div>
+        """
+
+    ranked = sorted(
+        profiles,
+        key=lambda item: (item.test_accuracy or 0.0, item.f1 or 0.0),
+        reverse=True,
+    )
+    best = ranked[0]
+    best_label = MODEL_LABELS_UA.get(best.key, best.architecture)
+    metric_rows = (
+        ("Accuracy", "test_accuracy"),
+        ("F1", "f1"),
+        ("ROC-AUC", "roc_auc"),
+    )
+
+    headers = "".join(
+        f"<span>{MODEL_LABELS_UA.get(profile.key, profile.architecture)}</span>"
+        for profile in profiles
+    )
+    rows: list[str] = []
+    for label, attr in metric_rows:
+        values = [getattr(profile, attr) for profile in profiles]
+        best_value = max((value or 0.0 for value in values), default=0.0)
+        cells = "".join(
+            _compare_value_html(
+                value,
+                lead=value is not None and value == best_value and best_value > 0,
+            )
+            for value in values
+        )
+        rows.append(
+            f"""
+            <div class="bench-compare-row">
+                <span class="bench-metric">{label}</span>
+                {cells}
+            </div>
+            """
+        )
+
+    acc_delta = None
+    if best.test_accuracy is not None and ranked[-1].test_accuracy is not None:
+        acc_delta = (best.test_accuracy - ranked[-1].test_accuracy) * 100
+
+    delta_text = (
+        f" на <em>+{acc_delta:.1f} pp</em> accuracy"
+        if acc_delta is not None and acc_delta > 0
+        else ""
+    )
+    verdict = (
+        f"<strong>{best_label}</strong> стабільно краща на test set{delta_text}. "
+        f"Обидві навчені на одному hi-res split (512px)."
+    )
+
+    return f"""
+    <div class="bench-shell">
+        <div class="bench-panel">
+            <header class="bench-head">
+                <span class="bench-eyebrow">Test set · метрики</span>
+                <h2 class="bench-title">Порівняння моделей</h2>
+            </header>
+            <div class="bench-compare">
+                <div class="bench-compare-head">
+                    <span></span>
+                    {headers}
+                </div>
+                {"".join(rows)}
+            </div>
+            <p class="bench-verdict">{verdict}</p>
+        </div>
+    </div>
+    """
 
 
 def parse_args() -> argparse.Namespace:
@@ -425,19 +988,79 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--config",
         type=Path,
-        default=Path("configs/ai_generated.yaml"),
-        help="Path to YAML config",
+        action="append",
+        dest="configs",
+        help="Model config (repeatable; default: ResNet18 + EfficientNet-B0)",
     )
     parser.add_argument(
         "--checkpoint",
         type=Path,
         default=None,
-        help="Path to model checkpoint (.pth)",
+        help="Override checkpoint for the first --config only",
     )
     parser.add_argument("--host", default="127.0.0.1", help="Server host")
     parser.add_argument("--port", type=int, default=7860, help="Server port")
     parser.add_argument("--share", action="store_true", help="Create public Gradio link")
     return parser.parse_args()
+
+
+def _resolve_model_configs(args: argparse.Namespace) -> dict[str, Path]:
+    if args.configs:
+        paths = args.configs
+        keys = [load_config(path)["model"]["name"] for path in paths]
+        return dict(zip(keys, paths, strict=True))
+    return DEFAULT_MODEL_CONFIGS.copy()
+
+
+def build_demo_engine(
+    model_configs: dict[str, Path],
+    *,
+    checkpoint_override: Path | None = None,
+) -> DemoEngine:
+    loaded: dict[str, LoadedModel] = {}
+    data_dir: Path | None = None
+
+    for index, (key, config_path) in enumerate(model_configs.items()):
+        config = load_config(config_path)
+        training = config["training"]
+        output_dir = Path(config["paths"]["output_dir"])
+        if data_dir is None:
+            data_dir = Path(config["paths"]["data_dir"])
+        resolved_checkpoint = output_dir / "checkpoints" / "best.pth"
+        if index == 0 and checkpoint_override is not None:
+            resolved_checkpoint = checkpoint_override
+
+        if not resolved_checkpoint.is_file():
+            msg = f"Checkpoint not found for {key}: {resolved_checkpoint}"
+            raise FileNotFoundError(msg)
+
+        device = torch.device(training["device"])
+        model, checkpoint = load_checkpoint(resolved_checkpoint, device)
+        metrics = _load_metrics_json(output_dir)
+        profile = build_model_profile(
+            key,
+            config,
+            checkpoint,
+            resolved_checkpoint,
+            metrics=metrics,
+        )
+        loaded[key] = LoadedModel(
+            key=key,
+            model=model,
+            transform=get_transforms(training["image_size"], train=False),
+            device=device,
+            class_names=tuple(config["data"]["classes"]),
+            profile=profile,
+        )
+        logger.info(
+            "Loaded %s (epoch %d) from %s",
+            config["model"]["name"],
+            checkpoint["epoch"],
+            resolved_checkpoint,
+        )
+
+    samples = _discover_dataset_samples(data_dir) if data_dir else []
+    return DemoEngine(loaded, samples)
 
 
 def _probability_rows_html(confidences: dict[str, float]) -> str:
@@ -457,6 +1080,12 @@ def _probability_rows_html(confidences: dict[str, float]) -> str:
             """,
         )
     return "".join(rows)
+
+
+def _combine_results(results: str, source: str) -> str:
+    if not source:
+        return results
+    return f'<div class="results-stack">{results}{source}</div>'
 
 
 def _results_html(title: str, confidence_pct: float, confidences: dict[str, float]) -> str:
@@ -520,134 +1149,119 @@ def _source_html(
     """
 
 
-def build_predict_fn(
-    config_path: Path,
-    checkpoint_path: Path | None,
-) -> tuple:
-    config = load_config(config_path)
-    training = config["training"]
-    data_dir = Path(config["paths"]["data_dir"])
-    output_dir = Path(config["paths"]["output_dir"])
-    resolved_checkpoint = (
-        checkpoint_path if checkpoint_path else output_dir / "checkpoints" / "best.pth"
-    )
+def create_demo(engine: DemoEngine) -> gr.Blocks:
+    default_key = engine.default_key
+    default_profile = engine.models[default_key].profile
 
-    if not resolved_checkpoint.is_file():
-        msg = f"Checkpoint not found: {resolved_checkpoint}"
-        raise FileNotFoundError(msg)
-
-    device = torch.device(training["device"])
-    model, checkpoint = load_checkpoint(resolved_checkpoint, device)
-    transform = get_transforms(training["image_size"], train=False)
-    class_names = tuple(config["data"]["classes"])
-
-    dataset_samples = _discover_dataset_samples(data_dir)
-
-    def _run_prediction(
-        image: Image.Image,
-        source: dict[str, str] | None = None,
-    ) -> tuple[str, str]:
-        label, confidences = predict_image(model, image, transform, device, class_names)
-        winner_score = confidences[label] * 100
-        title = VERDICT_REAL if label == "real" else VERDICT_AI
-        source_html = _source_html(source, predicted=label) if source is not None else EMPTY_SOURCE
-        return _results_html(title, winner_score, confidences), source_html
-
-    def predict(image: Image.Image) -> tuple[str, str]:
-        if image is None:
-            return EMPTY_RESULTS, EMPTY_SOURCE
-        return _run_prediction(image)
-
-    def random_from_dataset() -> tuple[Image.Image | None, str, str]:
-        if not dataset_samples:
-            msg = _empty_results_html("Датасет не знайдено. Запустіть `make download-hires-hf`.")
-            return None, msg, EMPTY_SOURCE
-
-        path, split, label_dir = random.choice(dataset_samples)
-        image = Image.open(path).convert("RGB")
-        source = {
-            "split": split,
-            "label_dir": label_dir,
-            "expected_class": _label_dir_to_class(label_dir),
-            "relative_path": f"{split}/{label_dir}/{path.name}",
-        }
-        results_html, source_html = _run_prediction(image, source=source)
-        return image, results_html, source_html
-
-    logger.info(
-        "Loaded %s (epoch %d) from %s",
-        config["model"]["name"],
-        checkpoint["epoch"],
-        resolved_checkpoint,
-    )
-
-    model_profile = build_model_profile(config, checkpoint, resolved_checkpoint)
-
-    return predict, random_from_dataset, model_profile
-
-
-def create_demo(
-    predict_fn,
-    random_from_dataset,
-    model_profile: ModelProfile,
-) -> gr.Blocks:
     with gr.Blocks(
         title="KKP — AI vs Real",
         theme=_dark_theme(),
         css=CUSTOM_CSS,
+        fill_width=True,
     ) as demo:
-        gr.HTML(
-            """
-            <header class="page-header">
-                <h1 class="hero-title">Детекція AI-зображень</h1>
-                <p class="hero-subtitle">
-                    Завантажте фото або візьміть випадкове з датасету — модель оцінить,
-                    чи це реальне зображення чи AI-генерація.
-                </p>
-            </header>
-            """,
-        )
+        with gr.Column(elem_id="kkp-page"):
+            gr.HTML(
+                """
+                <header class="page-header">
+                    <h1 class="hero-title">Детекція AI-зображень</h1>
+                    <p class="hero-subtitle">
+                        Завантажте фото або візьміть випадкове з датасету — модель оцінить,
+                        чи це реальне зображення чи AI-генерація.
+                    </p>
+                </header>
+                """,
+            )
 
-        with gr.Row(elem_id="kkp-main-row"):
-            with gr.Column(scale=1, elem_id="kkp-input-col"):
-                image_input = gr.Image(
-                    type="pil",
-                    label="Зображення",
-                    height=320,
-                    sources=["upload"],
-                    buttons=[],
-                    elem_id="kkp-image-input",
-                    container=False,
+            with gr.Column(elem_id="kkp-model-section"):
+                with gr.Row(elem_id="kkp-model-picker"):
+                    gr.HTML(
+                        """
+                        <div class="model-picker-side">
+                            <p class="model-picker-eyebrow">Модель</p>
+                            <p class="model-picker-lead">Що аналізує зображення</p>
+                        </div>
+                        """,
+                        elem_id="kkp-model-picker-label",
+                    )
+                    with gr.Column(elem_id="kkp-model-picker-controls"):
+                        model_select = gr.Radio(
+                            choices=engine.choices,
+                            value=default_key,
+                            show_label=False,
+                            container=False,
+                            elem_id="kkp-model-select",
+                        )
+                        model_note = gr.HTML(
+                            value=_model_note_html(default_key),
+                            elem_id="kkp-model-note",
+                        )
+                model_info = gr.HTML(
+                    default_profile.profile_info_html(),
+                    elem_id="kkp-model-info",
                 )
-                with gr.Row(elem_id="kkp-actions"):
-                    analyze_btn = gr.Button("Перевірити", variant="primary", scale=1)
-                    random_btn = gr.Button("Випадкове", scale=1)
-                    clear_btn = gr.Button("Очистити", scale=1)
 
-            with gr.Column(scale=1, elem_id="kkp-results-col"):
-                results_output = gr.HTML(value=EMPTY_RESULTS, elem_id="kkp-results-output")
-                source_output = gr.HTML(value=EMPTY_SOURCE, elem_id="kkp-source-wrap")
+            with gr.Row(elem_id="kkp-main-row"):
+                with gr.Column(scale=1, elem_id="kkp-input-col"):
+                    image_input = gr.Image(
+                        type="pil",
+                        label="Зображення",
+                        height=320,
+                        sources=["upload"],
+                        buttons=[],
+                        elem_id="kkp-image-input",
+                        container=False,
+                    )
+                    with gr.Row(elem_id="kkp-actions"):
+                        analyze_btn = gr.Button("Перевірити", variant="primary", scale=1)
+                        random_btn = gr.Button("Випадкове", scale=1)
+                        clear_btn = gr.Button("Очистити", scale=1)
 
-        outputs = [results_output, source_output]
+                with gr.Column(scale=1, elem_id="kkp-results-col"):
+                    results_output = gr.HTML(value=EMPTY_RESULTS, elem_id="kkp-results-output")
+
+            with gr.Column(elem_id="kkp-compare-section"):
+                gr.HTML(
+                    engine.comparison_html(),
+                    elem_id="kkp-model-compare",
+                    apply_default_css=False,
+                    container=True,
+                    padding=False,
+                )
+
+        outputs = [model_info, results_output]
         all_outputs = [image_input, *outputs]
+
+        def on_model_change(
+            image: Image.Image | None,
+            model_key: str,
+        ) -> tuple[str, str, str]:
+            info, results = engine.predict(image, model_key)
+            return info, results, _model_note_html(model_key)
+
         analyze_btn.click(
-            predict_fn,
-            inputs=image_input,
+            engine.predict,
+            inputs=[image_input, model_select],
             outputs=outputs,
             show_progress="hidden",
         )
         random_btn.click(
-            random_from_dataset,
+            engine.random_from_dataset,
+            inputs=[model_select],
             outputs=all_outputs,
             show_progress="hidden",
         )
-        clear_btn.click(
-            lambda: (None, EMPTY_RESULTS, EMPTY_SOURCE),
-            outputs=[image_input, results_output, source_output],
+        model_select.change(
+            on_model_change,
+            inputs=[image_input, model_select],
+            outputs=[*outputs, model_note],
             show_progress="hidden",
         )
-
-        gr.HTML(model_profile.footer_html(), elem_id="kkp-model-footer")
+        clear_btn.click(
+            lambda _image, model_key: (None, *engine.predict(None, model_key)),
+            inputs=[image_input, model_select],
+            outputs=[image_input, model_info, results_output],
+            show_progress="hidden",
+        )
 
     return demo
 
@@ -670,11 +1284,9 @@ def main() -> None:
     load_dotenv()
     args = parse_args()
 
-    predict_fn, random_from_dataset, model_profile = build_predict_fn(
-        args.config,
-        args.checkpoint,
-    )
-    demo = create_demo(predict_fn, random_from_dataset, model_profile)
+    model_configs = _resolve_model_configs(args)
+    engine = build_demo_engine(model_configs, checkpoint_override=args.checkpoint)
+    demo = create_demo(engine)
     port = _resolve_server_port(args.host, args.port)
     if port != args.port:
         logger.info("Port %d busy, using %d instead", args.port, port)

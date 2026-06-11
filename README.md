@@ -1,32 +1,27 @@
 # KKP — Комплексний курсовий проєкт
 
-**KKP** (*Комплексний курсовий проєкт*) — курсовий проєкт з **computer vision**: автоматичне виявлення неавтентичних зображень двох типів:
+**KKP** (*Комплексний курсовий проєкт*) — курсовий проєкт з **computer vision**: автоматичне виявлення **AI-генерованих зображень** (real vs fake).
 
-1. **AI-генеровані зображення** — відрізнити реальне фото від зображення, створеного нейромережею (Stable Diffusion, DALL·E, Midjourney тощо).
-2. **Відредаговані зображення** — виявити маніпуляції в оригінальному фото (кроп, вставка фрагментів, ретуш, заміна об'єктів).
-
-Обидві задачі формулюються як **бінарна класифікація**: `real` vs `fake` / `original` vs `edited`.
+Задача формулюється як **бінарна класифікація**: `real` vs `ai_generated`.
 
 ## Мета
 
-- Зібрати та підготувати дані для обох задач.
-- Навчити baseline-модель (transfer learning, наприклад ResNet/EfficientNet).
-- Порівняти метрики якості (accuracy, precision, recall, F1, ROC-AUC).
-- Проаналізувати, наскільки ознаки «AI-фейку» та «редагування» схожі або різняться між собою.
-- Оформити результати у курсовій роботі з відтворюваним кодом.
+- Зібрати та підготувати hi-res датасет AI vs Real.
+- Навчити та порівняти дві CNN-моделі (ResNet18, EfficientNet-B0) з transfer learning.
+- Оцінити якість (accuracy, precision, recall, F1, ROC-AUC) і оформити результати у звіті.
+- Надати інтерактивне Gradio-демо для перевірки зображень.
 
 ## Підхід
 
 ```
-Зображення → препроцесинг → CNN (transfer learning) → real / fake
+Зображення → препроцесинг (224px) → CNN (transfer learning) → real / ai_generated
 ```
-
-На першому етапі — дві незалежні моделі (по одній на задачу).
 
 ## Стек
 
 - Python 3.11+, PyTorch, torchvision
-- scikit-learn, pandas — метрики та аналіз
+- scikit-learn — метрики класифікації
+- Gradio — веб-демо
 - Ruff, pytest, pre-commit
 - Docker, GitHub Actions
 
@@ -34,19 +29,29 @@
 
 ```
 configs/
-  default.yaml        — спільні параметри
-  ai_generated.yaml   — real vs AI
-  edited.yaml         — original vs edited
+  ai_generated.yaml              — ResNet18, hi-res датасет
+  ai_generated_efficientnet.yaml — EfficientNet-B0
+  ai_generated_cifake.yaml       — legacy CIFAKE baseline (32×32)
 data/
-  ai_generated/       — датасет AI-детекції
-  edited/             — датасет редагувань
-src/kkp/              — вихідний код
-tests/                — тести
-notebooks/            — EDA
-outputs/              — результати (не в git)
+  ai_hires/                      — Parveshiiii/AI-vs-Real (512px, train/val/test)
+src/kkp/
+  train.py, evaluate.py, compare.py, demo.py
+outputs/
+  ai_generated/                  — ResNet18 checkpoints + metrics.json
+  ai_generated_efficientnet/     — EfficientNet checkpoints + metrics.json
+  comparison/                    — графіки порівняння моделей
 ```
 
 Параметри експериментів — у `configs/*.yaml`. Змінні з `.env` (`DATA_DIR`, `DEVICE`) підставляються автоматично.
+
+## Результати (test set)
+
+| Модель | Accuracy | F1 | ROC-AUC |
+|--------|----------|-----|---------|
+| ResNet18 | 93.6% | 0.938 | 0.992 |
+| EfficientNet-B0 | **98.5%** | **0.986** | **1.000** |
+
+Детальні метрики та графіки: `make compare` → `outputs/comparison/`.
 
 ## Запуск
 
@@ -56,34 +61,36 @@ outputs/              — результати (не в git)
 python -m venv .venv
 source .venv/bin/activate        # Windows: .venv\Scripts\activate
 
-make install                       # залежності + pre-commit
+make install
 cp .env.example .env
 
 make test
 make lint
 ```
 
-Перед комітом автоматично запускаються перевірки коду (Ruff) і формату повідомлення.
-
-### Коміти
-
-[Conventional Commits](https://www.conventionalcommits.org/): `<type>(<scope>): <description>`
-
-| Тип | Коли використовувати |
-|-----|----------------------|
-| `feat` | нова функціональність |
-| `fix` | виправлення бага |
-| `docs` | документація |
-| `test` | тести |
-| `refactor` | рефакторинг без зміни поведінки |
-| `chore` | інфраструктура, налаштування |
-| `ci` | CI/CD |
+### Дані
 
 ```bash
-git commit -m "chore: init project"
-git commit -m "feat: add data loader"
-git commit -m "fix(data): correct image path"
+make download-hires-hf           # повний hi-res датасет з Hugging Face
+make download-hires-hf-smoke       # міні-версія для перевірки
 ```
+
+### Навчання та оцінка
+
+```bash
+make train                       # ResNet18
+make train-efficientnet          # EfficientNet-B0
+make evaluate-all                # метрики на test → metrics.json
+make compare                     # графіки порівняння
+```
+
+### Демо
+
+```bash
+make demo                        # http://127.0.0.1:7860
+```
+
+Демо завантажує обидві моделі, дозволяє перемикати архітектуру, показує порівняння метрик і перевіряти завантажені або випадкові зображення з датасету.
 
 ### Docker
 
@@ -91,9 +98,9 @@ git commit -m "fix(data): correct image path"
 cp .env.example .env
 docker compose build
 
-docker compose run --rm dev        # робоче середовище
-docker compose run --rm test       # тести
-docker compose run --rm lint       # лінтер
+docker compose run --rm dev
+docker compose run --rm test
+docker compose run --rm lint
 ```
 
 ## CI
