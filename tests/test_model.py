@@ -22,6 +22,12 @@ def test_create_resnet18() -> None:
     assert output.shape == (2, 2)
 
 
+def test_create_efficientnet_b0() -> None:
+    model = create_model("efficientnet_b0", num_classes=2, pretrained=False)
+    output = model(torch.randn(2, 3, 224, 224))
+    assert output.shape == (2, 2)
+
+
 def test_run_epoch_on_tiny_loader() -> None:
     samples = [
         Sample(path=Path("dummy0"), label=0),
