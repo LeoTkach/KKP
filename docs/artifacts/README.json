@@ -1,0 +1,12 @@
+{
+  "runs": [
+    "resnet18",
+    "efficientnet_b0"
+  ],
+  "comparison_plots": [
+    "metrics_comparison.png",
+    "learning_curves.png",
+    "confusion_matrices.png",
+    "roc_curves.png"
+  ]
+}

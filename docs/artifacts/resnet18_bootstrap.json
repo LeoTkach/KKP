@@ -1,0 +1,7 @@
+{
+  "n_samples": 204,
+  "n_bootstrap": 2000,
+  "accuracy_mean": 0.9355980392156862,
+  "accuracy_ci95_low": 0.9019607843137255,
+  "accuracy_ci95_high": 0.9656862745098039
+}
