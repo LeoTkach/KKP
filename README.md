@@ -34,24 +34,51 @@ configs/
   ai_generated_cifake.yaml       — legacy CIFAKE baseline (32×32)
 data/
   ai_hires/                      — Parveshiiii/AI-vs-Real (512px, train/val/test)
+docs/
+  artifacts/                     — зафіксовані метрики, графіки, misclassifications (в git)
+  *.docx / *.pptx                — звіт і презентація ККП
 src/kkp/
   train.py, evaluate.py, compare.py, demo.py
-outputs/
-  ai_generated/                  — ResNet18 checkpoints + metrics.json
-  ai_generated_efficientnet/     — EfficientNet checkpoints + metrics.json
-  comparison/                    — графіки порівняння моделей
+outputs/                         — checkpoints (.pth) локально, не в git
+  ai_generated/
+  ai_generated_efficientnet/
+  comparison/
+scripts/
+  experiment_audit.py            — export/verify frozen results
+  generate_kkp_documents.py      — генерація звіту
 ```
 
 Параметри експериментів — у `configs/*.yaml`. Змінні з `.env` (`DATA_DIR`, `DEVICE`) підставляються автоматично.
 
-## Результати (test set)
+## Результати (test set, N=204)
 
-| Модель | Accuracy | F1 | ROC-AUC |
-|--------|----------|-----|---------|
-| ResNet18 | 93.6% | 0.938 | 0.992 |
-| EfficientNet-B0 | **98.5%** | **0.986** | **1.000** |
+| Модель | Accuracy | Precision | Recall | F1 | ROC-AUC | Помилок |
+|--------|----------|-----------|--------|-----|---------|---------|
+| ResNet18 | 93.6% | 0.908 | 0.971 | 0.938 | 0.992 | 13 |
+| EfficientNet-B0 | **98.5%** | **0.971** | **1.000** | **0.986** | **1.000** | 3 |
 
-Детальні метрики та графіки: `make compare` → `outputs/comparison/`.
+**Out-of-domain** (`data/real_world/`, N=30): EfficientNet-B0 — accuracy **80.0%**, F1 0.800 (domain shift).
+
+Повний звіт з bootstrap CI, confusion matrix і списком помилок:
+
+→ [`docs/artifacts/EXPERIMENT_SUMMARY.md`](docs/artifacts/EXPERIMENT_SUMMARY.md)
+
+Графіки: `docs/artifacts/*.png` або `make compare` → `outputs/comparison/`.
+
+## Відтворюваність без повторного навчання
+
+Checkpoint-и (`.pth`) **не комітяться** — занадто великі. У git зберігаються **метрики та графіки** в `docs/artifacts/`.
+
+```bash
+# Якщо checkpoint-и вже є локально (після make train):
+make evaluate-all        # ~хвилина, без GPU-тренування
+make verify-results      # порівняти з docs/artifacts/*.json
+
+# Оновити всі артефакти + summary + misclassifications:
+make experiment-audit
+```
+
+`make verify-results` проганяє inference на test set і перевіряє, що числа збігаються з закоміченими `docs/artifacts/*_test_metrics.json` (tol 1e-4).
 
 ## Запуск
 
@@ -61,7 +88,9 @@ outputs/
 python -m venv .venv
 source .venv/bin/activate        # Windows: .venv\Scripts\activate
 
-make install
+pip install -e ".[dev,demo,docs]"
+pre-commit install
+pre-commit install --hook-type commit-msg
 cp .env.example .env
 
 make test
@@ -72,7 +101,7 @@ make lint
 
 ```bash
 make download-hires-hf           # повний hi-res датасет з Hugging Face
-make download-hires-hf-smoke       # міні-версія для перевірки
+make download-hires-hf-smoke     # міні-версія для перевірки
 ```
 
 ### Навчання та оцінка
@@ -82,15 +111,30 @@ make train                       # ResNet18
 make train-efficientnet          # EfficientNet-B0
 make evaluate-all                # метрики на test → metrics.json
 make compare                     # графіки порівняння
+make experiment-audit            # docs/artifacts/ + EXPERIMENT_SUMMARY.md
 ```
+
+### Звіт ККП
+
+```bash
+make docs                        # DOCX + PPTX у docs/
+```
+
+Потрібні: Pages (macOS) або LibreOffice для номерів змісту; `pip install -e ".[docs]"` (pymupdf).
 
 ### Демо
 
 ```bash
 make demo                        # http://127.0.0.1:7860
+make demo-screenshots            # знімки UI для звіту (потрібен playwright)
 ```
 
-Демо завантажує обидві моделі, дозволяє перемикати архітектуру, показує порівняння метрик і перевіряти завантажені або випадкові зображення з датасету.
+**Веб-інтерфейс системи** (`make demo` → http://127.0.0.1:7860/):
+
+1. Оберіть модель: **ResNet18** або **EfficientNet-B0**
+2. Завантажте зображення (JPEG/PNG/WebP) або натисніть **«Випадкове»**
+3. Натисніть **«Перевірити»** — verdict і confidence
+4. У нижній панелі — порівняння метрик обох моделей
 
 ### Docker
 
@@ -106,6 +150,12 @@ docker compose run --rm lint
 ## CI
 
 При push/PR: Ruff, pytest, збірка Docker-образу.
+
+## Git / GitHub
+
+- Основна гілка розробки: **`dev`**
+- Default на GitHub: **`main`** (може відставати від `dev`)
+- Checkpoint-и та датасет — локально; у репо — код, тести, `docs/artifacts/`
 
 ## Виконавець
 

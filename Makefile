@@ -1,6 +1,6 @@
 PYTHON ?= .venv/bin/python
 
-.PHONY: install lint test train demo download-hires download-hires-hf train-cifake docker-build docker-dev docker-test docker-lint docker-jupyter
+.PHONY: install lint test train demo download-hires download-hires-hf train-cifake docker-build docker-dev docker-test docker-lint docker-jupyter docs compare evaluate evaluate-efficientnet evaluate-all train-efficientnet demo-screenshots experiment-audit verify-results export-artifacts ablation ablation-train gradcam
 
 install:
 	pip install -e ".[dev]"
@@ -12,7 +12,7 @@ lint:
 	ruff format --check src tests
 
 test:
-	pytest -v --cov=kkp --cov-report=term-missing
+	$(PYTHON) -m pytest -v --cov=kkp --cov-report=term-missing
 
 train:
 	$(PYTHON) -m kkp.train
@@ -50,6 +50,30 @@ download-hires-hf-smoke:
 
 demo:
 	$(PYTHON) -m kkp.demo
+
+docs:
+	$(PYTHON) scripts/generate_kkp_documents.py
+
+experiment-audit:
+	$(PYTHON) scripts/experiment_audit.py export
+
+ablation:
+	$(PYTHON) scripts/run_ablation.py
+
+ablation-train:
+	$(PYTHON) scripts/run_ablation.py --force-train
+
+verify-results:
+	$(PYTHON) scripts/experiment_audit.py verify
+
+export-artifacts:
+	$(PYTHON) scripts/export_report_artifacts.py
+
+gradcam:
+	$(PYTHON) scripts/generate_gradcam.py
+
+demo-screenshots:
+	$(PYTHON) scripts/capture_demo_screenshots.py --connect-only
 
 docker-build:
 	docker compose build
