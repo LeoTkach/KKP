@@ -1,0 +1,74 @@
+[
+  {
+    "key": "baseline",
+    "label": "aug=on, epochs=10 (baseline)",
+    "config": "configs/ai_generated_efficientnet.yaml",
+    "strong_augment": true,
+    "epochs": 10,
+    "best_epoch": 9,
+    "val_accuracy": 0.9852941176470589,
+    "test_accuracy": 0.9852941176470589,
+    "test_f1": 0.9855072463768116,
+    "test_roc_auc": 0.9999038831218763,
+    "errors": 3,
+    "confusion_matrix": [
+      [
+        99,
+        3
+      ],
+      [
+        0,
+        102
+      ]
+    ],
+    "metrics_artifact": "docs/artifacts/ablation_baseline_test_metrics.json"
+  },
+  {
+    "key": "no_augment",
+    "label": "aug=off, epochs=10",
+    "config": "configs/ablation_effnet_no_augment.yaml",
+    "strong_augment": false,
+    "epochs": 10,
+    "best_epoch": 9,
+    "val_accuracy": 0.9901960784313726,
+    "test_accuracy": 0.9754901960784313,
+    "test_f1": 0.975609756097561,
+    "test_roc_auc": 0.9983660130718954,
+    "errors": 5,
+    "confusion_matrix": [
+      [
+        99,
+        3
+      ],
+      [
+        2,
+        100
+      ]
+    ],
+    "metrics_artifact": "docs/artifacts/ablation_no_augment_test_metrics.json"
+  },
+  {
+    "key": "epochs5",
+    "label": "aug=on, epochs=5",
+    "config": "configs/ablation_effnet_epochs5.yaml",
+    "strong_augment": true,
+    "epochs": 5,
+    "best_epoch": 2,
+    "val_accuracy": 0.9803921568627451,
+    "test_accuracy": 0.9754901960784313,
+    "test_f1": 0.975609756097561,
+    "test_roc_auc": 0.9992310649750096,
+    "errors": 5,
+    "confusion_matrix": [
+      [
+        99,
+        3
+      ],
+      [
+        2,
+        100
+      ]
+    ],
+    "metrics_artifact": "docs/artifacts/ablation_epochs5_test_metrics.json"
+  }
+]

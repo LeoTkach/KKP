@@ -1,7 +1,7 @@
 [project]
 name = "kkp"
 version = "0.1.0"
-description = "KKP (Комплексний курсовий проєкт): детекція AI- та відредагованих зображень"
+description = "KKP (Комплексний курсовий проєкт): детекція AI-генерованих зображень"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
@@ -33,10 +33,17 @@ demo = [
 data = [
     "datasets>=3.0",
 ]
+docs = [
+    "pymupdf>=1.24",
+]
+demo-screenshots = [
+    "playwright>=1.40",
+]
 
 [project.scripts]
 kkp-train = "kkp.train:main"
 kkp-evaluate = "kkp.evaluate:main"
+kkp-compare = "kkp.compare:main"
 kkp-demo = "kkp.demo:main"
 
 [build-system]

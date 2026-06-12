@@ -1,0 +1,93 @@
+[
+  {
+    "file": "test_real_0001.jpg",
+    "true_label": "real",
+    "predicted_label": "ai_generated",
+    "confidence": 0.8975874185562134,
+    "error_type": "FP"
+  },
+  {
+    "file": "test_real_0002.jpg",
+    "true_label": "real",
+    "predicted_label": "ai_generated",
+    "confidence": 0.5427893996238708,
+    "error_type": "FP"
+  },
+  {
+    "file": "test_real_0004.jpg",
+    "true_label": "real",
+    "predicted_label": "ai_generated",
+    "confidence": 0.850374698638916,
+    "error_type": "FP"
+  },
+  {
+    "file": "test_real_0036.jpg",
+    "true_label": "real",
+    "predicted_label": "ai_generated",
+    "confidence": 0.7763294577598572,
+    "error_type": "FP"
+  },
+  {
+    "file": "test_real_0045.jpg",
+    "true_label": "real",
+    "predicted_label": "ai_generated",
+    "confidence": 0.8740765452384949,
+    "error_type": "FP"
+  },
+  {
+    "file": "test_real_0049.jpg",
+    "true_label": "real",
+    "predicted_label": "ai_generated",
+    "confidence": 0.9844943881034851,
+    "error_type": "FP"
+  },
+  {
+    "file": "test_real_0057.jpg",
+    "true_label": "real",
+    "predicted_label": "ai_generated",
+    "confidence": 0.7509263753890991,
+    "error_type": "FP"
+  },
+  {
+    "file": "test_real_0066.jpg",
+    "true_label": "real",
+    "predicted_label": "ai_generated",
+    "confidence": 0.8152560591697693,
+    "error_type": "FP"
+  },
+  {
+    "file": "test_real_0074.jpg",
+    "true_label": "real",
+    "predicted_label": "ai_generated",
+    "confidence": 0.9473771452903748,
+    "error_type": "FP"
+  },
+  {
+    "file": "test_real_0089.jpg",
+    "true_label": "real",
+    "predicted_label": "ai_generated",
+    "confidence": 0.5767104029655457,
+    "error_type": "FP"
+  },
+  {
+    "file": "test_fake_0043.jpg",
+    "true_label": "ai_generated",
+    "predicted_label": "real",
+    "confidence": 0.5846797823905945,
+    "error_type": "FN"
+  },
+  {
+    "file": "test_fake_0055.jpg",
+    "true_label": "ai_generated",
+    "predicted_label": "real",
+    "confidence": 0.6207857131958008,
+    "error_type": "FN"
+  },
+  {
+    "file": "test_fake_0058.jpg",
+    "true_label": "ai_generated",
+    "predicted_label": "real",
+    "confidence": 0.6277720928192139,
+    "error_type": "FN"
+  }
+]

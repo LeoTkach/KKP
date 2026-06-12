@@ -1,0 +1,38 @@
+# Підзадача 1: real vs AI-generated — EfficientNet-B0 (порівняння з ResNet18)
+
+project:
+  name: kkp-ai-generated-efficientnet
+  seed: 42
+
+paths:
+  data_dir: ${DATA_DIR:-./data}/ai_hires
+  output_dir: ${OUTPUT_DIR:-./outputs}/ai_generated_efficientnet
+
+training:
+  batch_size: 32
+  epochs: 10
+  learning_rate: 0.001
+  device: ${DEVICE:-cpu}
+  image_size: 224
+
+data:
+  task: ai_generated
+  classes:
+    - real
+    - ai_generated
+  val_split: 0.1
+  strong_augment: true
+  min_side: 128
+  extra_train_dir: null
+
+model:
+  name: efficientnet_b0
+  num_classes: 2
+  pretrained: true
+
+datasets:
+  primary: split_folder
+  layout:
+    train: train/{REAL,FAKE}
+    val: val/{REAL,FAKE}
+    test: test/{REAL,FAKE}

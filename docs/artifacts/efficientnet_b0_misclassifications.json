@@ -1,0 +1,23 @@
+[
+  {
+    "file": "test_real_0001.jpg",
+    "true_label": "real",
+    "predicted_label": "ai_generated",
+    "confidence": 0.6044841408729553,
+    "error_type": "FP"
+  },
+  {
+    "file": "test_real_0004.jpg",
+    "true_label": "real",
+    "predicted_label": "ai_generated",
+    "confidence": 0.9925661087036133,
+    "error_type": "FP"
+  },
+  {
+    "file": "test_real_0043.jpg",
+    "true_label": "real",
+    "predicted_label": "ai_generated",
+    "confidence": 0.8537937998771667,
+    "error_type": "FP"
+  }
+]
