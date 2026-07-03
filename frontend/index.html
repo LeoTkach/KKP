@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Детекція AI-зображень</title>
+  <link rel="stylesheet" href="/styles.css?v=13">
+</head>
+<body>
+  <div class="page">
+    <header class="header">
+      <h1 class="title">Детекція AI-зображень</h1>
+      <p class="lead">
+        <strong>Навчання.</strong>
+        Дві моделі — ResNet18 і EfficientNet-B0 — вчилися відповідати на просте питання:
+        це справжнє фото чи зроблене штучним інтелектом? Їм показували тисячі прикладів
+        з датасету REAL / FAKE і казали правильну відповідь.
+      </p>
+      <p class="lead">
+        До цього моделі вже вміли знаходити на фото звичайні речі — обличчя, тварин, предмети
+        (їх навчали на мільйонах зображень ImageNet). За 10 проходів по нашему датасету ми
+        навчили їх новому: відрізняти справжнє фото від згенерованого штучним інтелектом.
+        Під час навчання фото трохи змінювали (поворот, яскравість), щоб модель вивчила
+        загальні ознаки справжніх і фейкових знімків, а не просто запам’ятовувала
+        правильну відповідь до кожного конкретного фото.
+      </p>
+      <p class="lead">
+        <strong>Як перевірити своє фото.</strong> Завантажте зображення й натисніть
+        «Аналізувати». Перед аналізом воно зменшується до 224×224 пікселів — моделі
+        навчалися на фото саме такого розміру, тому воно має збігатися. Після цього ви
+        побачите висновок, відсоток впевненості та heatmap — кольорове накладання, яке
+        показує, які ділянки зображення найбільше вплинули на рішення моделі. Повзунком
+        під фото можна порівняти оригінал і heatmap.
+      </p>
+    </header>
+
+    <section class="toolbar" aria-label="Модель">
+      <span class="toolbar-label">Модель:</span>
+      <div class="segmented" id="model-select" role="radiogroup"></div>
+    </section>
+
+    <section class="workspace">
+      <div class="card">
+        <h2 class="card-label">Зображення</h2>
+        <div class="image-stage" id="image-stage">
+          <div class="image-view" id="image-view">
+            <img id="preview" class="preview hidden" alt="Завантажене зображення">
+            <label class="upload-zone" id="upload-zone">
+              <input type="file" id="file-input" accept="image/*" hidden>
+              <span>Завантажити зображення</span>
+            </label>
+          </div>
+          <div class="compare-view hidden" id="compare-view">
+            <div class="compare-stage" id="compare-stage">
+              <div class="compare-media" id="compare-media">
+                <img id="compare-base" class="compare-base" alt="Оригінал">
+                <div class="compare-overlay" id="compare-overlay">
+                  <img id="compare-heat" class="compare-heat" alt="Grad-CAM heatmap">
+                </div>
+                <div class="compare-handle" id="compare-handle" aria-hidden="true"></div>
+                <div
+                  class="compare-slider-wrap"
+                  id="compare-slider-wrap"
+                  role="slider"
+                  aria-label="Порівняння оригіналу та heatmap"
+                  aria-valuemin="0"
+                  aria-valuemax="100"
+                  aria-valuenow="50"
+                  tabindex="0"
+                >
+                  <div class="compare-slider-track">
+                    <div class="compare-slider-thumb" id="compare-slider-thumb" aria-hidden="true"></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="actions">
+          <button type="button" class="btn btn-primary" id="analyze-btn">Аналізувати</button>
+          <button type="button" class="btn btn-secondary" id="random-btn">Випадкове</button>
+          <button type="button" class="btn btn-secondary" id="clear-btn">Очистити</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2 class="card-label">Результат</h2>
+        <div class="result-stage">
+          <div id="results" class="results results--empty">
+            <div class="results-placeholder">
+              <p class="results-title">Результат з’явиться тут</p>
+              <p class="results-text">Завантажте зображення та натисніть «Аналізувати».</p>
+            </div>
+          </div>
+        </div>
+        <div class="card-actions-spacer" aria-hidden="true"></div>
+      </div>
+    </section>
+  </div>
+
+  <script src="/app.js?v=13" defer></script>
+</body>
+</html>

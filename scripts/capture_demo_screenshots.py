@@ -79,7 +79,7 @@ def capture_demo_screenshots(
             msg = "Checkpoints missing. Run: make train && make train-efficientnet"
             raise RuntimeError(msg)
         proc = subprocess.Popen(
-            [sys.executable, "-m", "kkp.demo", "--host", host, "--port", str(port)],
+            [sys.executable, "-m", "kkp.api", "--host", host, "--port", str(port)],
             cwd=ROOT,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,

@@ -1,8 +1,35 @@
 services:
+  # Веб-інтерфейс (FastAPI). За замовчуванням: docker compose up --build
+  demo:
+    build:
+      context: .
+      target: demo
+      args:
+        PYTORCH_INDEX: ${PYTORCH_INDEX:-https://download.pytorch.org/whl/cpu}
+    env_file:
+      - .env
+    environment:
+      DATA_DIR: /app/data
+      OUTPUT_DIR: /app/outputs
+      DEVICE: cpu
+      KKP_FRONTEND_DIR: /app/frontend
+    ports:
+      - "${DEMO_PORT:-7860}:7860"
+    volumes:
+      - ./data:/app/data
+      - ./outputs:/app/outputs
+      - ./configs:/app/configs:ro
+    command: ["python", "-m", "kkp.api", "--host", "0.0.0.0", "--port", "7860"]
+
+  # Навчання (потрібен датасет у ./data). Профіль train:
+  #   docker compose --profile train up app
   app:
+    profiles: [train]
     build:
       context: .
       target: runtime
+      args:
+        PYTORCH_INDEX: ${PYTORCH_INDEX:-https://download.pytorch.org/whl/cpu}
     env_file:
       - .env
     environment:
@@ -12,12 +39,15 @@ services:
       - ./data:/app/data
       - ./outputs:/app/outputs
       - ./configs:/app/configs:ro
-    command: ["python", "-m", "kkp.train", "--config", "/app/configs/default.yaml"]
+    command: ["python", "-m", "kkp.train", "--config", "configs/ai_generated.yaml"]
 
   dev:
+    profiles: [dev]
     build:
       context: .
       target: dev
+      args:
+        PYTORCH_INDEX: ${PYTORCH_INDEX:-https://download.pytorch.org/whl/cpu}
     env_file:
       - .env
     environment:
@@ -30,9 +60,12 @@ services:
     command: ["bash"]
 
   jupyter:
+    profiles: [jupyter]
     build:
       context: .
       target: dev
+      args:
+        PYTORCH_INDEX: ${PYTORCH_INDEX:-https://download.pytorch.org/whl/cpu}
     env_file:
       - .env
     ports:
@@ -46,21 +79,27 @@ services:
       - --port=8888
       - --no-browser
       - --allow-root
-      - --NotebookApp.token=
-      - --NotebookApp.password=
+      - --ServerApp.token=
+      - --ServerApp.password=
 
   lint:
+    profiles: [ci]
     build:
       context: .
       target: dev
+      args:
+        PYTORCH_INDEX: ${PYTORCH_INDEX:-https://download.pytorch.org/whl/cpu}
     volumes:
       - .:/app
     command: ["ruff", "check", "src", "tests"]
 
   test:
+    profiles: [ci]
     build:
       context: .
       target: dev
+      args:
+        PYTORCH_INDEX: ${PYTORCH_INDEX:-https://download.pytorch.org/whl/cpu}
     volumes:
       - .:/app
     command: ["pytest", "-v", "--cov=kkp", "--cov-report=term-missing"]

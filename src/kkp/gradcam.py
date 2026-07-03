@@ -68,8 +68,6 @@ def overlay_gradcam(
     alpha: float = 0.45,
 ) -> np.ndarray:
     """Return RGB uint8 array: original image with jet colormap overlay."""
-    import matplotlib.cm as cm
-
     rgb = np.asarray(image.convert("RGB"), dtype=np.float32) / 255.0
     cam_tensor = torch.from_numpy(cam).unsqueeze(0).unsqueeze(0)
     cam_resized = (
@@ -82,9 +80,18 @@ def overlay_gradcam(
         .squeeze()
         .numpy()
     )
-    heatmap = cm.get_cmap("jet")(cam_resized)[..., :3]
+    heatmap = _jet_rgb(cam_resized)
     blended = np.clip((1 - alpha) * rgb + alpha * heatmap, 0.0, 1.0)
     return (blended * 255).astype(np.uint8)
+
+
+def _jet_rgb(values: np.ndarray) -> np.ndarray:
+    """Map float array [0, 1] to jet-like RGB without matplotlib."""
+    v = np.clip(values, 0.0, 1.0)
+    r = np.clip(1.5 - np.abs(4 * v - 3), 0, 1)
+    g = np.clip(1.5 - np.abs(4 * v - 2), 0, 1)
+    b = np.clip(1.5 - np.abs(4 * v - 1), 0, 1)
+    return np.stack([r, g, b], axis=-1)
 
 
 def explain_image(

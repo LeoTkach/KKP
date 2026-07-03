@@ -28,7 +28,9 @@ dev = [
     "jupyterlab>=4.2",
 ]
 demo = [
-    "gradio>=5.0",
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+    "python-multipart>=0.0.9",
 ]
 data = [
     "datasets>=3.0",
@@ -44,7 +46,7 @@ demo-screenshots = [
 kkp-train = "kkp.train:main"
 kkp-evaluate = "kkp.evaluate:main"
 kkp-compare = "kkp.compare:main"
-kkp-demo = "kkp.demo:main"
+kkp-demo = "kkp.api:main"
 
 [build-system]
 requires = ["hatchling"]

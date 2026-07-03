@@ -140,11 +140,27 @@ make demo-screenshots            # знімки UI для звіту (потрі
 
 ```bash
 cp .env.example .env
-docker compose build
 
-docker compose run --rm dev
-docker compose run --rm test
-docker compose run --rm lint
+# Веб-інтерфейс (Gradio) — http://localhost:7860
+docker compose up --build demo
+
+# CI / розробка (окремі профілі)
+docker compose --profile ci run --rm test
+docker compose --profile ci run --rm lint
+docker compose --profile dev run --rm dev
+docker compose --profile jupyter up jupyter
+docker compose --profile train up app   # потрібен ./data
+```
+
+Перед demo потрібні checkpoint-и в `outputs/` (локально: `make train`).
+
+На Mac (Apple Silicon) за замовчуванням ставиться **CPU-only PyTorch** (~100 MB замість CUDA-збірки >400 MB).
+Якщо збірка знову впаде через мережу — просто перезапустіть `docker compose build`.
+
+Linux + NVIDIA GPU (опційно):
+
+```bash
+PYTORCH_INDEX=https://download.pytorch.org/whl/cu124 docker compose build demo
 ```
 
 ## CI

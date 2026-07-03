@@ -1,6 +1,6 @@
 PYTHON ?= .venv/bin/python
 
-.PHONY: install lint test train demo download-hires download-hires-hf train-cifake docker-build docker-dev docker-test docker-lint docker-jupyter docs compare evaluate evaluate-efficientnet evaluate-all train-efficientnet demo-screenshots experiment-audit verify-results export-artifacts ablation ablation-train gradcam
+.PHONY: install lint test train demo download-hires download-hires-hf train-cifake docker-build docker-dev docker-test docker-lint docker-jupyter docs docs-lite compare evaluate evaluate-efficientnet evaluate-all train-efficientnet demo-screenshots experiment-audit verify-results export-artifacts ablation ablation-train gradcam
 
 install:
 	pip install -e ".[dev]"
@@ -49,10 +49,13 @@ download-hires-hf-smoke:
 	$(PYTHON) scripts/download_ai_hires.py --profile hf --train-per-class 4 --val-per-class 2 --test-per-class 2
 
 demo:
-	$(PYTHON) -m kkp.demo
+	$(PYTHON) -m kkp.api
 
 docs:
 	$(PYTHON) scripts/generate_kkp_documents.py
+
+docs-lite:
+	$(PYTHON) scripts/generate_kkp_documents.py --lite-only
 
 experiment-audit:
 	$(PYTHON) scripts/experiment_audit.py export
