@@ -9,7 +9,7 @@
 - Зібрати та підготувати hi-res датасет AI vs Real.
 - Навчити та порівняти дві CNN-моделі (ResNet18, EfficientNet-B0) з transfer learning.
 - Оцінити якість (accuracy, precision, recall, F1, ROC-AUC) і оформити результати у звіті.
-- Надати інтерактивне Gradio-демо для перевірки зображень.
+- Надати веб-демо (FastAPI + власний інтерфейс) для перевірки зображень і Grad-CAM.
 
 ## Підхід
 
@@ -21,7 +21,7 @@
 
 - Python 3.11+, PyTorch, torchvision
 - scikit-learn — метрики класифікації
-- Gradio — веб-демо
+- FastAPI — JSON API та веб-демо (`frontend/`)
 - Ruff, pytest, pre-commit
 - Docker, GitHub Actions
 
@@ -37,8 +37,10 @@ data/
 docs/
   artifacts/                     — зафіксовані метрики, графіки, misclassifications (в git)
   *.docx / *.pptx                — звіт і презентація ККП
+frontend/                        — статичний UI демо (HTML, CSS, JS)
 src/kkp/
-  train.py, evaluate.py, compare.py, demo.py
+  train.py, evaluate.py, compare.py
+  api.py, demo_engine.py, demo.py
 outputs/                         — checkpoints (.pth) локально, не в git
   ai_generated/
   ai_generated_efficientnet/
@@ -129,19 +131,19 @@ make demo                        # http://127.0.0.1:7860
 make demo-screenshots            # знімки UI для звіту (потрібен playwright)
 ```
 
-**Веб-інтерфейс системи** (`make demo` → http://127.0.0.1:7860/):
+**Веб-інтерфейс** (`make demo` → http://127.0.0.1:7860/):
 
 1. Оберіть модель: **ResNet18** або **EfficientNet-B0**
 2. Завантажте зображення (JPEG/PNG/WebP) або натисніть **«Випадкове»**
-3. Натисніть **«Перевірити»** — verdict і confidence
-4. У нижній панелі — порівняння метрик обох моделей
+3. Натисніть **«Аналізувати»** — висновок, відсоток впевненості та ймовірності по класах
+4. На зображенні — **Grad-CAM heatmap**: повзунок порівнює оригінал і теплокарту (які ділянки вплинули на рішення)
 
 ### Docker
 
 ```bash
 cp .env.example .env
 
-# Веб-інтерфейс (Gradio) — http://localhost:7860
+# Веб-інтерфейс (FastAPI) — http://localhost:7860
 docker compose up --build demo
 
 # CI / розробка (окремі профілі)
