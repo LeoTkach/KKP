@@ -29,6 +29,7 @@ class KkpMeta:
     github: str
     initial_data: str
     work_questions: str
+    commission_members: tuple[str, ...]
 
 
 DEFAULT_META = KkpMeta(
@@ -59,5 +60,10 @@ DEFAULT_META = KkpMeta(
     work_questions=(
         "аналіз предметної галузі; постановка задачі; проєктування архітектури ПЗ; "
         "навчання та порівняння CNN-моделей; аналіз результатів; Gradio demo; тестування та CI."
+    ),
+    commission_members=(
+        "Володимир КОБЗЄВ",
+        "Віталій КАУК",
+        "Дмитро КОЛЕСНИКОВ",
     ),
 )

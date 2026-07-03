@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 from docx import Document
@@ -285,9 +286,47 @@ def _add_blank_paragraph(doc: Document) -> None:
     doc.add_paragraph("")
 
 
+def _set_paragraph_keep_next(paragraph: Paragraph, *, enabled: bool = True) -> None:
+    p_pr = paragraph._element.get_or_add_pPr()
+    keep_next = p_pr.find(qn("w:keepNext"))
+    if enabled:
+        if keep_next is None:
+            p_pr.append(OxmlElement("w:keepNext"))
+    elif keep_next is not None:
+        p_pr.remove(keep_next)
+
+
+def _set_paragraph_keep_lines(paragraph: Paragraph, *, enabled: bool = True) -> None:
+    p_pr = paragraph._element.get_or_add_pPr()
+    keep_lines = p_pr.find(qn("w:keepLines"))
+    if enabled:
+        if keep_lines is None:
+            p_pr.append(OxmlElement("w:keepLines"))
+    elif keep_lines is not None:
+        p_pr.remove(keep_lines)
+
+
+def _set_paragraph_widow_control(paragraph: Paragraph, *, enabled: bool = True) -> None:
+    p_pr = paragraph._element.get_or_add_pPr()
+    widow = p_pr.find(qn("w:widowControl"))
+    if enabled:
+        if widow is None:
+            widow_el = OxmlElement("w:widowControl")
+            widow_el.set(qn("w:val"), "0")
+            p_pr.append(widow_el)
+    elif widow is not None:
+        p_pr.remove(widow)
+
+
 def _add_table_caption(doc: Document, text: str) -> None:
     paragraph = doc.add_paragraph(text)
     _apply_body_paragraph_format(paragraph)
+    pf = paragraph.paragraph_format
+    pf.space_before = Pt(0)
+    pf.space_after = Pt(3)
+    _set_paragraph_keep_next(paragraph)
+    _set_paragraph_keep_lines(paragraph)
+    _set_paragraph_widow_control(paragraph)
     for run in paragraph.runs:
         _ensure_font(run)
 
@@ -583,6 +622,42 @@ def _fill_plain_fields(doc: Document, meta: KkpMeta) -> None:
     _fill_assignment_header_block(doc, meta)
 
 
+def _fill_commission_table(doc: Document, meta: KkpMeta) -> None:
+    for table in doc.tables:
+        if not table.rows:
+            continue
+        header = _normalize(table.rows[0].cells[0].text)
+        if not header.startswith("Члени комісії"):
+            continue
+        for row_index, member in enumerate(meta.commission_members, start=1):
+            if row_index >= len(table.rows):
+                break
+            _set_cell_text(table.rows[row_index].cells[0], member)
+        return
+
+
+def _ensure_assignment_sheet_starts_on_new_page(doc: Document, meta: KkpMeta) -> None:
+    """Keep «2026 р.» at the bottom of the title page; assignment starts on the next page."""
+    year_idx = _find_paragraph_index(doc, f"{meta.year} р.")
+    if year_idx is None:
+        year_idx = _find_paragraph_index(doc, "2026 р.")
+    if year_idx is None:
+        return
+
+    year_paragraph = doc.paragraphs[year_idx]
+    year_ppr = year_paragraph._element.pPr
+    if year_ppr is not None:
+        page_break = year_ppr.find(qn("w:pageBreakBefore"))
+        if page_break is not None:
+            year_ppr.remove(page_break)
+
+    for index in range(year_idx + 1, len(doc.paragraphs)):
+        paragraph = doc.paragraphs[index]
+        if _normalize(paragraph.text).startswith("Харківський"):
+            _set_page_break_before(paragraph)
+            return
+
+
 def _fill_course_group_table(doc: Document, meta: KkpMeta) -> None:
     if len(doc.tables) < 2:
         return
@@ -658,6 +733,8 @@ def fill_front_matter(doc: Document, meta: KkpMeta) -> None:
     _fill_item4_lines(doc, meta)
     # paras 4,7,24,28,31,34,47,55,70,71,74 — hints and signature lines left intact
 
+    _fill_commission_table(doc, meta)
+    _ensure_assignment_sheet_starts_on_new_page(doc, meta)
     _fill_course_group_table(doc, meta)
     _fill_calendar_table(doc, meta)
 
@@ -952,7 +1029,7 @@ def _find_toc_target_paragraph(doc: Document, entry: str, *, start: int) -> int 
     return None
 
 
-def _content_report_stats(meta: KkpMeta) -> tuple[int, int, int]:
+def _content_report_stats(meta: KkpMeta, *, include_figures: bool = True) -> tuple[int, int, int]:
     """Figures/tables/sources from report content (not caption paragraphs)."""
     figures = 0
     tables = 0
@@ -960,16 +1037,21 @@ def _content_report_stats(meta: KkpMeta) -> tuple[int, int, int]:
         for _subtitle, items in blocks:
             for item in items:
                 if isinstance(item, FigureBlock):
-                    figures += 1
+                    if include_figures:
+                        figures += 1
                 elif isinstance(item, TableBlock):
                     tables += 1
     return figures, tables, len(references(meta))
 
 
 def _compute_report_stats(
-    doc: Document, meta: KkpMeta, *, pages: int | None = None
+    doc: Document,
+    meta: KkpMeta,
+    *,
+    pages: int | None = None,
+    include_figures: bool = True,
 ) -> tuple[int, int, int, int]:
-    figures, tables, sources = _content_report_stats(meta)
+    figures, tables, sources = _content_report_stats(meta, include_figures=include_figures)
     if pages is not None:
         return pages, figures, tables, sources
     perelik = _find_paragraph_index(doc, "ПЕРЕЛІК СКОРОЧЕНЬ") or 0
@@ -978,12 +1060,14 @@ def _compute_report_stats(
     return pages, figures, tables, sources
 
 
-def update_abstract_stats(doc: Document, meta: KkpMeta, *, pages: int) -> None:
+def update_abstract_stats(
+    doc: Document, meta: KkpMeta, *, pages: int, include_figures: bool = True
+) -> None:
     """Refresh РЕФЕРАТ stats line after layout (real page count from PDF)."""
     start = _find_paragraph_index(doc, "РЕФЕРАТ")
     if start is None:
         return
-    figures, tables, sources = _content_report_stats(meta)
+    figures, tables, sources = _content_report_stats(meta, include_figures=include_figures)
     line = (
         f"Пояснювальна записка містить: {pages} с., {figures} рис., "
         f"{tables} табл., {sources} джерел."
@@ -1031,36 +1115,48 @@ def fill_abstract(
         ),
         start + 3: keywords_ua,
         start + 5: (
-            "Об'єкт розробки – програмна система для автоматичного віднесення "
-            "цифрового зображення до класів «реальне фото» або «AI-генерація»."
+            "Об'єкт розробки — це програмна система, яка автоматично визначає, "
+            "чи було зображення згенеровано штучним інтелектом."
         ),
         start + 6: (
-            "Мета розробки – проєктування та реалізація відтворюваного конвеєра навчання: "
-            "завантаження hi-res датасету, навчання двох CNN-моделей, порівняння метрик "
-            "і інтерактивне Gradio-демо."
+            "Мета розробки — спроєктувати і реалізувати повний цикл машинного "
+            "навчання: від завантаження hi-res датасету та тренування двох "
+            "згорткових нейронних мереж до порівняння метрик і створення "
+            "інтерактивного демо."
         ),
         start + 7: (
-            "Метод рішення – Python, PyTorch, донавчання готових моделей (ResNet18, "
-            "EfficientNet-B0), scikit-learn, Gradio, pytest, Docker та GitHub Actions."
+            "Метод рішення — в якості основної мови програмування обрано Python "
+            "з використанням фреймворку PyTorch та бібліотеки scikit-learn для "
+            "машинного навчання. В основі рішення лежить донавчання вже готових "
+            "архітектур (ResNet18 та EfficientNet-B0). Для реалізації фронтенду "
+            "було використано Gradio, для тестування — pytest, а для деплою та "
+            "автоматизації процесів застосовано Docker і GitHub Actions."
         ),
         start + 8: (
-            "У результаті розробки EfficientNet-B0 досягла accuracy 98,5 % на контрольній "
+            "У результаті EfficientNet-B0 досягла accuracy 98,5 % на контрольній "
             "вибірці проти 93,6 % у ResNet18 на датасеті Parveshiiii/AI-vs-Real."
         ),
         start + 10: keywords_en,
         start + 12: (
-            "The object of development is a software system for classifying digital "
-            "images as real photographs or AI-generated content."
+            "The object of development is a software system that automatically "
+            "determines whether an image was generated by artificial intelligence."
         ),
         start + 13: (
-            "The purpose of the work is to design and implement a reproducible ML pipeline "
-            "with dataset loading, model training, evaluation, comparison, and a Gradio demo."
+            "The purpose of the work is to design and implement a full machine "
+            "learning cycle: from loading a hi-res dataset and training two "
+            "convolutional neural networks to comparing metrics and creating an "
+            "interactive demo."
         ),
         start + 14: (
-            "Solution method – Python, PyTorch, transfer learning, scikit-learn, and Gradio."
+            "The solution method — Python was chosen as the main programming "
+            "language, using the PyTorch framework and the scikit-learn library "
+            "for machine learning. The solution is based on fine-tuning pre-trained "
+            "architectures (ResNet18 and EfficientNet-B0). Gradio was used for "
+            "the frontend, pytest for testing, and Docker and GitHub Actions for "
+            "deployment and process automation."
         ),
         start + 15: (
-            "As a result of the development, EfficientNet-B0 reached 98.5% test accuracy "
+            "As a result, EfficientNet-B0 achieved 98.5% accuracy on the test set "
             "versus 93.6% for ResNet18 on the Parveshiiii/AI-vs-Real dataset."
         ),
     }
@@ -1247,9 +1343,9 @@ def _add_heading(
 
 
 def _add_subheading(doc: Document, text: str) -> None:
-    paragraph = doc.add_paragraph(text)
-    for run in paragraph.runs:
-        _ensure_font(run)
+    paragraph = doc.add_paragraph()
+    run = paragraph.add_run(text)
+    _ensure_font(run)
     _apply_subheading_paragraph_format(paragraph)
 
 
@@ -1285,16 +1381,36 @@ def _add_math(doc: Document, latex: str) -> None:
     add_math_paragraph(doc, latex)
 
 
-def _add_figure_caption(doc: Document, caption: str, *, tight_after: bool = False) -> None:
+def _add_figure_caption(doc: Document, caption: str, *, tight_after: bool = False) -> Paragraph:
     paragraph = doc.add_paragraph(caption)
     paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
     pf = paragraph.paragraph_format
-    pf.space_before = Pt(3)
+    pf.space_before = Pt(2)
     pf.space_after = Pt(0)
-    pf.line_spacing = 1.0 if tight_after else 1.5
-    pf.line_spacing_rule = WD_LINE_SPACING.SINGLE if tight_after else WD_LINE_SPACING.ONE_POINT_FIVE
+    pf.line_spacing = 1.0
+    pf.line_spacing_rule = WD_LINE_SPACING.SINGLE
+    _set_paragraph_keep_lines(paragraph)
+    _set_paragraph_widow_control(paragraph)
+    if not tight_after:
+        pf.space_after = Pt(6)
     for run in paragraph.runs:
         _ensure_font(run)
+    return paragraph
+
+
+def _add_figure_caption_only(
+    doc: Document,
+    caption: str,
+    *,
+    leading_blank: bool = True,
+    tight_after: bool = False,
+    blank_after_caption: bool = False,
+) -> None:
+    if leading_blank:
+        _add_blank_paragraph(doc)
+    _add_figure_caption(doc, caption, tight_after=tight_after and not blank_after_caption)
+    if blank_after_caption:
+        _add_blank_paragraph(doc)
 
 
 def _add_figure(
@@ -1318,6 +1434,8 @@ def _add_figure(
     pf.line_spacing_rule = WD_LINE_SPACING.SINGLE
     run = paragraph.add_run()
     run.add_picture(str(path), width=Cm(width_cm))
+    _set_paragraph_keep_next(paragraph)
+    _set_paragraph_keep_lines(paragraph)
     _add_figure_caption(doc, caption, tight_after=tight_after and not blank_after_caption)
     if blank_after_caption:
         _add_blank_paragraph(doc)
@@ -1734,13 +1852,150 @@ _TEST_CASE_TABLE_KEYS = frozenset(
     {"test_case_demo", "test_case_metrics", "test_case_deploy", "test_case_inference"},
 )
 
+_FIGURE_REF_NUMBERS: dict[str, str] = {
+    "use_cases": "3.1",
+    "pipeline": "3.2",
+    "modules": "3.3",
+    "demo_overview": "4.1",
+    "demo_result": "4.2",
+    "metrics_comparison": "5.3",
+    "learning_curves": "5.4",
+    "confusion_matrices": "5.5",
+    "roc_curves": "5.6",
+    "misclassification_examples": "5.7",
+    "gradcam_examples": "5.8",
+    "testing_pyramid": "6.1",
+    "ui_mockup": "3.4",
+}
+
+_TABLE_REF_NUMBERS: dict[str, str] = {
+    "dataset": "3.1",
+    "hyperparams": "4.1",
+    "models_theory": "5.1",
+    "metrics": "5.2",
+    "error_analysis": "5.3",
+    "generalization": "5.4",
+    "bootstrap_ci": "5.5",
+    "ablation": "5.6",
+    "deployment": "7.1",
+    "test_case_demo": "6.1",
+    "test_case_metrics": "6.2",
+    "test_case_deploy": "7.2",
+    "test_case_inference": "7.3",
+}
+
+_FIGURE_REF_RE = re.compile(
+    r"рис\.?\s*(\d+\.\d+)(?:\s*[–\-]\s*(\d+\.\d+))?",
+    re.IGNORECASE,
+)
+_TABLE_REF_RE = re.compile(
+    r"(?:табл\.?|таблиця)\s*(\d+\.\d+)(?:\s*[–\-]\s*(\d+\.\d+))?",
+    re.IGNORECASE,
+)
+
+
+def _ref_tuple(number: str) -> tuple[int, int]:
+    major, minor = number.split(".", 1)
+    return int(major), int(minor)
+
+
+def _ref_in_range(number: str, start: str, end: str | None) -> bool:
+    target = _ref_tuple(number)
+    start_ref = _ref_tuple(start)
+    if end is None:
+        return target == start_ref
+    end_ref = _ref_tuple(end)
+    return start_ref <= target <= end_ref
+
+
+def _text_mentions_figure(text: str, number: str) -> bool:
+    for match in _FIGURE_REF_RE.finditer(text.lower()):
+        if _ref_in_range(number, match.group(1), match.group(2)):
+            return True
+    return False
+
+
+def _text_mentions_table(text: str, number: str) -> bool:
+    for match in _TABLE_REF_RE.finditer(text.lower()):
+        if _ref_in_range(number, match.group(1), match.group(2)):
+            return True
+    return False
+
+
+def _block_ref_number(item: FigureBlock | TableBlock) -> str | None:
+    if isinstance(item, FigureBlock):
+        return _FIGURE_REF_NUMBERS.get(item.key)
+    return _TABLE_REF_NUMBERS.get(item.key)
+
+
+def _text_mentions_block(text: str, item: FigureBlock | TableBlock) -> bool:
+    number = _block_ref_number(item)
+    if number is None:
+        return False
+    if isinstance(item, FigureBlock):
+        return _text_mentions_figure(text, number)
+    return _text_mentions_table(text, number)
+
+
+def _first_mention_index(items: list, item: FigureBlock | TableBlock) -> int | None:
+    for index, candidate in enumerate(items):
+        if isinstance(candidate, str) and _text_mentions_block(candidate, item):
+            return index
+    return None
+
+
+def _reorder_figures_tables_after_mentions(items: list) -> list:
+    """Place each FigureBlock/TableBlock immediately after its first in-text mention."""
+    blocks = [
+        (index, item)
+        for index, item in enumerate(items)
+        if isinstance(item, FigureBlock | TableBlock)
+    ]
+    if not blocks:
+        return items
+
+    insert_after: dict[int, list[FigureBlock | TableBlock]] = {}
+    trailing: list[FigureBlock | TableBlock] = []
+
+    for block_index, block in blocks:
+        mention_index = _first_mention_index(items, block)
+        if mention_index is None:
+            trailing.append(block)
+            continue
+        if block_index <= mention_index:
+            insert_after.setdefault(mention_index, []).append(block)
+
+    if not insert_after:
+        return items
+
+    placed_keys = {
+        (type(block), block.key) for block_list in insert_after.values() for block in block_list
+    }
+    ordered: list = []
+    for index, item in enumerate(items):
+        if isinstance(item, FigureBlock | TableBlock):
+            if (type(item), item.key) in placed_keys:
+                continue
+            ordered.append(item)
+            continue
+        ordered.append(item)
+        for block in insert_after.get(index, []):
+            ordered.append(block)
+
+    for block in trailing:
+        if (type(block), block.key) not in placed_keys:
+            ordered.append(block)
+    return ordered
+
 
 def _render_section_items(
     doc: Document,
     items: list,
     *,
     figure_registry: dict[str, tuple],
+    include_figures: bool = True,
 ) -> None:
+    items = _reorder_figures_tables_after_mentions(items)
     for index, item in enumerate(items):
         next_item = items[index + 1] if index + 1 < len(items) else None
         if isinstance(item, str):
@@ -1754,12 +2009,25 @@ def _render_section_items(
             if entry is None:
                 continue
             path, caption = entry
+            prev = items[index - 1] if index > 0 else None
+            leading_blank = not isinstance(prev, FigureBlock | str)
+            blank_after_caption = isinstance(next_item, str)
+            tight_after = isinstance(next_item, CodeBlock | MathBlock)
+            if not include_figures:
+                _add_figure_caption_only(
+                    doc,
+                    caption,
+                    leading_blank=leading_blank,
+                    tight_after=tight_after,
+                    blank_after_caption=blank_after_caption,
+                )
+                continue
             if path.is_file():
-                prev = items[index - 1] if index > 0 else None
-                leading_blank = not isinstance(prev, FigureBlock | str)
-                blank_after_caption = isinstance(next_item, str)
-                tight_after = isinstance(next_item, CodeBlock | MathBlock)
-                width_cm = 11.0 if item.key == "testing_pyramid" else 14.0
+                width_cm = {
+                    "testing_pyramid": 11.0,
+                    "pipeline": 17.5,
+                    "ui_mockup": 14.0,
+                }.get(item.key, 14.0)
                 _add_figure(
                     doc,
                     path,
@@ -1789,6 +2057,7 @@ def append_main_body(
     *,
     comparison_dir,
     assets_dir,
+    include_figures: bool = True,
 ) -> None:
     _cleanup_before_abbreviations(doc)
     _replace_abbreviations(doc)
@@ -1821,6 +2090,10 @@ def append_main_body(
         ),
         "pipeline": (assets_dir / "pipeline.png", "Рис. 3.2 – Пайплайн навчання та експлуатації"),
         "modules": (assets_dir / "modules.png", "Рис. 3.3 – Файлова структура проєкту KKP"),
+        "ui_mockup": (
+            assets_dir / "ui_mockup.png",
+            "Рис. 3.4 – Макет веб-інтерфейсу (wireframe)",
+        ),
         "testing_pyramid": (
             assets_dir / "testing_pyramid.png",
             "Рис. 6.1 – Рівні тестування програмного комплексу",
@@ -1864,7 +2137,9 @@ def append_main_body(
         for subtitle, items in blocks:
             if subtitle:
                 _add_subheading(doc, subtitle)
-            _render_section_items(doc, items, figure_registry=figure_registry)
+            _render_section_items(
+                doc, items, figure_registry=figure_registry, include_figures=include_figures
+            )
 
     _add_heading(doc, "ВИСНОВКИ", gap_before_body=True)
     for paragraph in conclusions(meta):
@@ -1881,11 +2156,18 @@ def fill_kkp_document(
     *,
     comparison_dir,
     assets_dir,
+    include_figures: bool = True,
 ) -> None:
     fill_front_matter(doc, meta)
     _trim_abstract_before_toc(doc)
-    append_main_body(doc, meta, comparison_dir=comparison_dir, assets_dir=assets_dir)
-    stats = _compute_report_stats(doc, meta)
+    append_main_body(
+        doc,
+        meta,
+        comparison_dir=comparison_dir,
+        assets_dir=assets_dir,
+        include_figures=include_figures,
+    )
+    stats = _compute_report_stats(doc, meta, include_figures=include_figures)
     fill_abstract(doc, meta, stats=stats)
     _apply_major_section_page_breaks(doc)
     _ensure_page_break_before_heading(doc, "ЗМІСТ")

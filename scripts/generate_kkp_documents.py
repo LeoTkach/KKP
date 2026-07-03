@@ -12,6 +12,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 
 from capture_demo_screenshots import capture_demo_screenshots
 from docx import Document
+from docx_submission import prepare_submission_docs
 from docx_toc_pages import resolve_document_page_count, resolve_toc_pages
 from export_report_artifacts import export_report_artifacts
 from generate_report_figures import generate_report_figures
@@ -29,15 +30,22 @@ WORD_TEMPLATE = ROOT / "Шаблон_записки_до_ККП_бакалавр
 PPT_TEMPLATE = ROOT / "Шаблон_презентації_до_ККП_бакалавра_2025 (1).potx"
 
 REPORT_NAME = "2026_Б_ККП_ПЗПІ-23-5_Ткач_Л_Я.docx"
+REPORT_LITE_NAME = "2026_Б_ККП_ПЗПІ-23-5_Ткач_Л_Я_без_рис.docx"
 PRESENTATION_NAME = "2026_Б_ККП_ПЗПІ-23-5_Ткач_Л_Я.pptx"
 
 
-def build_report(output: Path) -> Path:
+def build_report(output: Path, *, include_figures: bool = True) -> Path:
     tmp = DOCS / "_tmp_report.docx"
-    work = DOCS / "_tmp_toc_work.docx"
+    work = DOCS / ("_tmp_toc_work.docx" if include_figures else "_tmp_toc_work_lite.docx")
     word_template_to_docx(WORD_TEMPLATE, tmp)
     doc = Document(str(tmp))
-    fill_kkp_document(doc, DEFAULT_META, comparison_dir=COMPARISON, assets_dir=REPORT_ASSETS)
+    fill_kkp_document(
+        doc,
+        DEFAULT_META,
+        comparison_dir=COMPARISON,
+        assets_dir=REPORT_ASSETS,
+        include_figures=include_figures,
+    )
     doc.save(str(work))
     tmp.unlink(missing_ok=True)
 
@@ -50,33 +58,36 @@ def build_report(output: Path) -> Path:
     print("Updating abstract stats from rendered page count...")
     page_count = resolve_document_page_count(output)
     doc = Document(str(output))
-    update_abstract_stats(doc, DEFAULT_META, pages=page_count)
+    update_abstract_stats(doc, DEFAULT_META, pages=page_count, include_figures=include_figures)
     doc.save(str(output))
-    print(f"Abstract stats: {page_count} pages")
+    label = "lite" if not include_figures else "full"
+    print(f"Abstract stats ({label}): {page_count} pages")
     work.unlink(missing_ok=True)
     print(f"TOC page numbers: {toc_pages[0]}–{toc_pages[-1]} ({len(toc_pages)} entries)")
 
-    rw_metrics = DOCS / "_tmp_real_world_metrics.json"
-    try:
-        from kkp.config import load_config
-        from kkp.evaluate import evaluate_model, save_metrics
+    if include_figures:
+        rw_metrics = DOCS / "_tmp_real_world_metrics.json"
+        try:
+            from kkp.config import load_config
+            from kkp.evaluate import evaluate_model, save_metrics
 
-        config = load_config(ROOT / "configs" / "ai_generated_efficientnet.yaml")
-        ckpt = ROOT / "outputs" / "ai_generated_efficientnet" / "checkpoints" / "best.pth"
-        rw_dir = ROOT / "data" / "real_world"
-        if ckpt.is_file() and rw_dir.is_dir():
-            metrics, _ = evaluate_model(config, ckpt, data_dir=rw_dir)
-            save_metrics(metrics, rw_metrics)
-            export_report_artifacts(real_world_metrics=rw_metrics)
-        else:
+            config = load_config(ROOT / "configs" / "ai_generated_efficientnet.yaml")
+            ckpt = ROOT / "outputs" / "ai_generated_efficientnet" / "checkpoints" / "best.pth"
+            rw_dir = ROOT / "data" / "real_world"
+            if ckpt.is_file() and rw_dir.is_dir():
+                metrics, _ = evaluate_model(config, ckpt, data_dir=rw_dir)
+                save_metrics(metrics, rw_metrics)
+                export_report_artifacts(real_world_metrics=rw_metrics)
+            else:
+                export_report_artifacts()
+        except FileNotFoundError as exc:
+            print(f"Warning: {exc}")
             export_report_artifacts()
-    except FileNotFoundError as exc:
-        print(f"Warning: {exc}")
-        export_report_artifacts()
-    finally:
-        rw_metrics.unlink(missing_ok=True)
+        finally:
+            rw_metrics.unlink(missing_ok=True)
 
-    print(f"Report artifacts: {DOCS / 'artifacts'}")
+        print(f"Report artifacts: {DOCS / 'artifacts'}")
+
     return output
 
 
@@ -97,9 +108,26 @@ def build_presentation(output: Path) -> Path:
 
 
 def main() -> None:
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Generate KKP report and presentation.")
+    parser.add_argument(
+        "--lite-only",
+        action="store_true",
+        help="Build only the lite DOCX (no embedded figures), skip full report and PPTX.",
+    )
+    args = parser.parse_args()
+
     DOCS.mkdir(exist_ok=True)
     report_path = DOCS / REPORT_NAME
+    report_lite_path = DOCS / REPORT_LITE_NAME
     presentation_path = DOCS / PRESENTATION_NAME
+
+    if args.lite_only:
+        print("Building lite report (no embedded figures)...")
+        build_report(report_lite_path, include_figures=False)
+        print(f"Report (lite): {report_lite_path}")
+        return
 
     print("Generating report figures...")
     generate_report_figures(REPORT_ASSETS, data_root=ROOT / "data")
@@ -123,6 +151,16 @@ def main() -> None:
     print("Building report from Word template...")
     build_report(report_path)
     print(f"Report: {report_path}")
+
+    print("Preparing submission DOCX names (full + shortened for plagiarism)...")
+    full_sub, short_sub = prepare_submission_docs(report_path, DOCS)
+    print(f"Submission full:      {full_sub}")
+    print(f"Submission shortened: {short_sub}")
+
+    report_lite_path = DOCS / REPORT_LITE_NAME
+    print("Building lite report (no embedded figures)...")
+    build_report(report_lite_path, include_figures=False)
+    print(f"Report (lite): {report_lite_path}")
 
     print("Building presentation from PPT template...")
     build_presentation(presentation_path)

@@ -127,7 +127,7 @@ def draw_use_cases(output: Path) -> None:
     )
 
     _stick_figure(ax, 0.65, 2.85, "Дослідник", scale=1.05)
-    _stick_figure(ax, 10.05, 3.75, "Користувач", scale=1.05)
+    _stick_figure(ax, 10.05, 3.75, "Оператор UI", scale=1.05)
 
     res_hand = (0.92, 3.05)
     _assoc_arrow(ax, res_hand, _ellipse_edge(*pos["download"], *res_hand, w=w, h=h))
@@ -144,7 +144,7 @@ def draw_use_cases(output: Path) -> None:
 
 def draw_pipeline(output: Path) -> None:
     """Training + usage flow: command → action → result per block."""
-    fig, ax = plt.subplots(figsize=(12, 5.8))
+    fig, ax = plt.subplots(figsize=(18, 8))
     ax.set_xlim(0, 12)
     ax.set_ylim(0, 5.8)
     ax.axis("off")
@@ -167,7 +167,7 @@ def draw_pipeline(output: Path) -> None:
             cmd,
             ha="center",
             va="center",
-            fontsize=8,
+            fontsize=11,
             fontfamily="monospace",
             fontweight="bold",
             color="#0F172A",
@@ -178,7 +178,7 @@ def draw_pipeline(output: Path) -> None:
             action,
             ha="center",
             va="center",
-            fontsize=8.5,
+            fontsize=11.5,
             color="#1E293B",
         )
         ax.text(
@@ -187,7 +187,7 @@ def draw_pipeline(output: Path) -> None:
             result,
             ha="center",
             va="center",
-            fontsize=7.5,
+            fontsize=10.5,
             color="#64748B",
             style="italic",
         )
@@ -255,7 +255,7 @@ def draw_pipeline(output: Path) -> None:
     usage_y = 0.85
     usage_steps = [
         ("make demo", "Запустити Gradio-сервер", "→ localhost:7860"),
-        ("Завантажити JPEG", "Користувач обирає фото", "→ predict_image()"),
+        ("Завантажити JPEG", "Оператор обирає фото", "→ predict_image()"),
         ("Відповідь UI", "Клас + confidence", "→ real / ai_generated"),
     ]
     uw = 3.15
@@ -279,7 +279,69 @@ def draw_pipeline(output: Path) -> None:
 
     fig.tight_layout(pad=0.3)
     output.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(output, dpi=180, bbox_inches="tight", facecolor="white")
+    fig.savefig(output, dpi=220, bbox_inches="tight", facecolor="white")
+    plt.close(fig)
+
+
+def draw_ui_mockup(output: Path) -> None:
+    """Balsamiq-style wireframe for Gradio UI (section 3.5)."""
+    fig, ax = plt.subplots(figsize=(10, 6))
+    ax.set_xlim(0, 10)
+    ax.set_ylim(0, 6)
+    ax.axis("off")
+
+    def wire_box(xy, w, h, label, *, fc="#F5F5F5", ec="#333333", fontsize=9):
+        x, y = xy
+        patch = FancyBboxPatch(
+            (x, y),
+            w,
+            h,
+            boxstyle="round,pad=0.02,rounding_size=0.06",
+            linewidth=1.2,
+            edgecolor=ec,
+            facecolor=fc,
+            linestyle="-",
+        )
+        ax.add_patch(patch)
+        ax.text(
+            x + w / 2, y + h / 2, label, ha="center", va="center", fontsize=fontsize, color="#222"
+        )
+
+    # Model selection — topmost block
+    wire_box(
+        (0.6, 4.85),
+        8.8,
+        0.95,
+        "Вибір моделі:\nResNet18   |   EfficientNet-B0",
+        fc="#FFFFFF",
+        fontsize=10,
+    )
+    # Upload zone
+    wire_box((0.6, 2.75), 4.0, 1.75, "Завантажити зображення\n(JPEG / PNG / WebP)", fc="#FAFAFA")
+    # Result panel
+    wire_box(
+        (5.0, 2.75),
+        4.4,
+        1.75,
+        "Результат:\n«Реальне фото» / «AI-генерація»\nВпевненість: 98,4 %",
+        fc="#FFFFFF",
+    )
+    # Buttons
+    wire_box((0.6, 1.8), 1.85, 0.65, "Перевірити", fc="#D4EDDA")
+    wire_box((2.75, 1.8), 1.85, 0.65, "Випадкове", fc="#FFF3CD")
+    # Metrics table
+    wire_box(
+        (0.6, 0.35),
+        8.8,
+        1.0,
+        "Таблиця метрик контрольної вибірки (accuracy, F1, ROC-AUC)",
+        fc="#F0F0F0",
+        fontsize=8.5,
+    )
+
+    fig.tight_layout(pad=0.2)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(output, dpi=160, bbox_inches="tight", facecolor="white")
     plt.close(fig)
 
 
@@ -435,11 +497,13 @@ def generate_report_figures(output_dir: Path, *, data_root: Path | None = None) 
         "pipeline": output_dir / "pipeline.png",
         "modules": output_dir / "modules.png",
         "testing_pyramid": output_dir / "testing_pyramid.png",
+        "ui_mockup": output_dir / "ui_mockup.png",
     }
     draw_use_cases(paths["use_cases"])
     draw_pipeline(paths["pipeline"])
     draw_modules(paths["modules"])
     draw_testing_pyramid(paths["testing_pyramid"])
+    draw_ui_mockup(paths["ui_mockup"])
     if data_root is not None:
         paths["misclassification_examples"] = output_dir / "misclassification_examples.png"
         draw_misclassification_examples(paths["misclassification_examples"], data_root=data_root)
